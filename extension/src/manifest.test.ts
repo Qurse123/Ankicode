@@ -66,4 +66,26 @@ describe("extension manifest", () => {
       await rm(workspace, { force: true, recursive: true });
     }
   });
+
+  it("emits the real content entrypoint as a non-empty classic script", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ankicode-content-"));
+    const outDir = join(workspace, "dist");
+
+    try {
+      await build(
+        mergeConfig(contentConfig, {
+          build: {
+            outDir,
+          },
+        }),
+      );
+
+      const artifact = await readFile(join(outDir, "content.js"), "utf8");
+
+      expect(artifact).toContain("ankicode-content-ready");
+      expect(artifact).not.toMatch(/^\s*(?:import|export)\s/m);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
 });

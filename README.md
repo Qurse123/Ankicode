@@ -11,7 +11,7 @@ The approved MVP boundaries are recorded in
 ## Prerequisites
 
 - macOS
-- Node.js and npm
+- Node.js `^20.19.0` or `>=22.12.0`, and npm
 - The stable Rust toolchain installed with `rustup`
 - Tauri's macOS system prerequisites, including Xcode Command Line Tools
 
