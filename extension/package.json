@@ -4,8 +4,10 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "build": "tsc --noEmit && vite build",
-    "typecheck": "tsc --noEmit --pretty false",
+    "build": "npm run typecheck && npm run build:background && npm run build:content",
+    "build:background": "vite build --config vite.background.config.ts",
+    "build:content": "vite build --config vite.content.config.ts",
+    "typecheck": "tsc -p tsconfig.json --pretty false && tsc -p tsconfig.node.json --pretty false",
     "test": "vitest run"
   },
   "devDependencies": {
