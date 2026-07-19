@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "Ankicode",
+  "version": "0.1.0",
+  "description": "Connect LeetCode problems to the local Ankicode desktop app.",
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://leetcode.com/problems/*"],
+      "js": ["content.js"]
+    }
+  ]
+}
