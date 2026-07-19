@@ -12,10 +12,5 @@ export default defineConfig({
       formats: ["iife"],
       name: "AnkicodeContent",
     },
-    rollupOptions: {
-      output: {
-        inlineDynamicImports: true,
-      },
-    },
   },
 });
