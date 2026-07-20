@@ -9,7 +9,7 @@ pub mod storage;
 
 use commands::{AppInner, AppState};
 use learning::FsrsScheduler;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use storage::Database;
 use tauri::Manager;
 
@@ -24,8 +24,15 @@ pub fn run() {
             let settings = db.get_settings().expect("load settings");
             let scheduler = FsrsScheduler::new(settings.desired_retention as f32)
                 .expect("build scheduler from settings");
-            app.manage(AppState {
-                inner: Mutex::new(AppInner { db, scheduler }),
+            let state = AppState {
+                inner: Arc::new(Mutex::new(AppInner { db, scheduler })),
+            };
+            let server_state = state.clone();
+            app.manage(state);
+            tauri::async_runtime::spawn(async move {
+                if let Err(error) = integration::serve(server_state).await {
+                    eprintln!("Ankicode loopback API failed: {error}");
+                }
             });
             Ok(())
         })
@@ -38,6 +45,8 @@ pub fn run() {
             commands::set_problem_status_cmd,
             commands::get_problem_detail,
             commands::record_rating,
+            commands::list_pending_completions,
+            commands::get_loopback_status,
             commands::update_settings,
             commands::regenerate_pairing_code,
             commands::export_backup,

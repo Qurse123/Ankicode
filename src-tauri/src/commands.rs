@@ -3,6 +3,7 @@
 use crate::{
     backup::BackupDocument,
     daily_queue::{DayWindow, DayWindowError},
+    integration::{PendingCompletionDto, LOOPBACK_PORT},
     learning::{FsrsScheduler, Rating, ReviewEvent, ScheduleState},
     problems::{Difficulty, NewProblem, Problem, ProblemError, ProblemStatus},
     settings::{AppSettings, SettingsUpdate},
@@ -11,12 +12,13 @@ use crate::{
 use chrono::{TimeZone, Utc};
 use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::State;
 use thiserror::Error;
 
+#[derive(Clone)]
 pub struct AppState {
-    pub inner: Mutex<AppInner>,
+    pub inner: Arc<Mutex<AppInner>>,
 }
 
 pub struct AppInner {
@@ -163,6 +165,14 @@ fn with_state<T>(
     f(&mut guard)
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoopbackStatusDto {
+    pub address: String,
+    pub port: u16,
+    pub url: String,
+}
+
 fn now() -> i64 {
     Utc::now().timestamp()
 }
@@ -306,12 +316,40 @@ pub fn record_rating(
     args: RecordRatingArgs,
 ) -> Result<ScheduleState, CommandError> {
     with_state(&state, |inner| {
-        let event = ReviewEvent::new(args.idempotency_key, args.rating, now())
+        let reviewed_at = now();
+        let event = ReviewEvent::new(args.idempotency_key, args.rating, reviewed_at)
             .map_err(|error| CommandError::Learning(error.to_string()))?;
+        let schedule = inner
+            .db
+            .record_review(args.problem_id, event, &inner.scheduler)?;
+        let _ = inner
+            .db
+            .resolve_pending_for_problem(args.problem_id, reviewed_at)?;
+        Ok(schedule)
+    })
+}
+
+#[tauri::command]
+pub fn list_pending_completions(
+    state: State<'_, AppState>,
+) -> Result<Vec<PendingCompletionDto>, CommandError> {
+    with_state(&state, |inner| {
         Ok(inner
             .db
-            .record_review(args.problem_id, event, &inner.scheduler)?)
+            .list_pending_completions()?
+            .into_iter()
+            .map(PendingCompletionDto::from)
+            .collect())
     })
+}
+
+#[tauri::command]
+pub fn get_loopback_status() -> LoopbackStatusDto {
+    LoopbackStatusDto {
+        address: "127.0.0.1".to_owned(),
+        port: LOOPBACK_PORT,
+        url: format!("http://127.0.0.1:{LOOPBACK_PORT}"),
+    }
 }
 
 #[tauri::command]
