@@ -4,15 +4,17 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "build": "npm run typecheck && npm run build:background && npm run build:content",
+    "build": "npm run typecheck && npm run build:background && npm run build:content && npm run build:popup",
     "build:background": "vite build --config vite.background.config.ts",
     "build:content": "vite build --config vite.content.config.ts",
+    "build:popup": "vite build --config vite.popup.config.ts",
     "typecheck": "tsc -p tsconfig.json --pretty false && tsc -p tsconfig.node.json --pretty false",
     "test": "vitest run"
   },
   "devDependencies": {
     "@types/chrome": "^0.2.2",
     "@types/node": "^26.1.1",
+    "jsdom": "^29.1.1",
     "typescript": "^6.0.3",
     "vite": "^8.1.5",
     "vitest": "^4.1.10"

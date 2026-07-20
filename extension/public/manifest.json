@@ -3,6 +3,12 @@
   "name": "Ankicode",
   "version": "0.1.0",
   "description": "Connect LeetCode problems to the local Ankicode desktop app.",
+  "permissions": ["storage", "alarms"],
+  "host_permissions": ["http://127.0.0.1:17342/*"],
+  "action": {
+    "default_title": "Ankicode",
+    "default_popup": "popup.html"
+  },
   "background": {
     "service_worker": "background.js",
     "type": "module"

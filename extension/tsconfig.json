@@ -8,5 +8,6 @@
     "noEmit": true,
     "types": ["chrome"]
   },
-  "include": ["src/background.ts", "src/content.ts"]
+  "include": ["src/**/*.ts", "src/**/*.d.ts"],
+  "exclude": ["src/**/*.test.ts"]
 }

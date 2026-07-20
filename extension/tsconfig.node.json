@@ -7,7 +7,7 @@
     "noEmit": true,
     "resolveJsonModule": true,
     "strict": true,
-    "types": ["node", "vitest/globals"]
+    "types": ["node", "vitest/globals", "chrome"]
   },
   "include": ["src/**/*.test.ts", "vite*.config.ts"]
 }
