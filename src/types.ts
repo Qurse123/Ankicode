@@ -14,6 +14,24 @@ export type Bootstrap = {
   settings: AppSettings;
 };
 
+export type PendingCompletion = {
+  id: number;
+  problemId: number;
+  slug: string;
+  title: string;
+  difficulty: Difficulty;
+  url: string;
+  idempotencyKey: string;
+  acceptedAt: number;
+  createdAt: number;
+};
+
+export type LoopbackStatus = {
+  address: string;
+  port: number;
+  url: string;
+};
+
 export type TodayItem = {
   problemId: number;
   slug: string;

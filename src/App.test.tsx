@@ -11,6 +11,7 @@ vi.mock("./api", async () => {
     getBootstrap: vi.fn(),
     getToday: vi.fn(),
     listProblemsView: vi.fn(),
+    listPendingCompletions: vi.fn(),
     completeOnboarding: vi.fn(),
   };
 });
@@ -20,6 +21,8 @@ describe("App", () => {
     vi.mocked(api.getBootstrap).mockReset();
     vi.mocked(api.getToday).mockReset();
     vi.mocked(api.listProblemsView).mockReset();
+    vi.mocked(api.listPendingCompletions).mockReset();
+    vi.mocked(api.listPendingCompletions).mockResolvedValue([]);
   });
 
   it("shows onboarding when the local profile is incomplete", async () => {
@@ -70,5 +73,41 @@ describe("App", () => {
     expect(
       screen.getByText("No problems assigned for today."),
     ).toBeInTheDocument();
+  });
+
+  it("surfaces a rating prompt for pending completions", async () => {
+    vi.mocked(api.getBootstrap).mockResolvedValue({
+      settings: {
+        timezoneId: "America/New_York",
+        desiredRetention: 0.9,
+        onboardingCompleted: true,
+        pairingCode: "WXYZ9876",
+        updatedAt: 1,
+      },
+    });
+    vi.mocked(api.getToday).mockResolvedValue({
+      localDate: "2024-06-01",
+      items: [],
+    });
+    vi.mocked(api.listPendingCompletions).mockResolvedValue([
+      {
+        id: 9,
+        problemId: 3,
+        slug: "two-sum",
+        title: "Two Sum",
+        difficulty: "easy",
+        url: "https://leetcode.com/problems/two-sum/",
+        idempotencyKey: "accepted-1",
+        acceptedAt: 10,
+        createdAt: 11,
+      },
+    ]);
+
+    render(<App />);
+
+    expect(
+      await screen.findByRole("dialog", { name: "Two Sum" }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("pending ratings")).toHaveTextContent("1");
   });
 });

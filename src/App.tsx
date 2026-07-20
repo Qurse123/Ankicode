@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 
 import "./App.css";
 import {
@@ -6,6 +6,7 @@ import {
   getBootstrap,
   getProblemDetail,
   getToday,
+  listPendingCompletions,
   listProblemsView,
   newIdempotencyKey,
   openProblemUrl,
@@ -21,6 +22,7 @@ import { Today } from "./components/Today";
 import type {
   AppSettings,
   Difficulty,
+  PendingCompletion,
   ProblemDetail,
   ProblemListItem,
   ProblemStatus,
@@ -51,6 +53,20 @@ function App() {
   const [ratingTarget, setRatingTarget] = useState<RatingTarget | null>(null);
   const [ratingBusy, setRatingBusy] = useState(false);
   const [ratingError, setRatingError] = useState<string | null>(null);
+  const [pendingCompletions, setPendingCompletions] = useState<
+    PendingCompletion[]
+  >([]);
+  const [suppressedPendingId, setSuppressedPendingId] = useState<number | null>(
+    null,
+  );
+
+  const pendingPrompt =
+    pendingCompletions.find((item) => item.id !== suppressedPendingId) ?? null;
+  const dialogTarget =
+    ratingTarget ??
+    (pendingPrompt
+      ? { problemId: pendingPrompt.problemId, title: pendingPrompt.title }
+      : null);
 
   useEffect(() => {
     let cancelled = false;
@@ -70,23 +86,26 @@ function App() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!settings?.onboardingCompleted) {
-      return;
+  async function refreshPending() {
+    try {
+      const pending = await listPendingCompletions();
+      setPendingCompletions(pending);
+      setSuppressedPendingId((current) =>
+        current != null && pending.some((item) => item.id === current)
+          ? current
+          : null,
+      );
+    } catch {
+      // Keep the last known pending list if the poll fails.
     }
-    if (tab === "today") {
-      void refreshToday();
-    }
-    if (tab === "list") {
-      void refreshList();
-    }
-  }, [settings?.onboardingCompleted, tab]);
+  }
 
   async function refreshToday() {
     setTodayLoading(true);
     setTodayError(null);
     try {
       setToday(await getToday());
+      await refreshPending();
     } catch (cause) {
       setTodayError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -106,6 +125,52 @@ function App() {
     }
   }
 
+  const loadTabData = useEffectEvent((currentTab: Tab) => {
+    if (currentTab === "today") {
+      void refreshToday();
+    }
+    if (currentTab === "list") {
+      void refreshList();
+    }
+  });
+
+  const pollPending = useEffectEvent(() => {
+    void refreshPending();
+  });
+
+  useEffect(() => {
+    if (!settings?.onboardingCompleted) {
+      return;
+    }
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) {
+        loadTabData(tab);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [settings?.onboardingCompleted, tab]);
+
+  useEffect(() => {
+    if (!settings?.onboardingCompleted) {
+      return;
+    }
+    let cancelled = false;
+    const poll = () => {
+      if (!cancelled) {
+        pollPending();
+      }
+    };
+    queueMicrotask(poll);
+    const timer = window.setInterval(poll, 15_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [settings?.onboardingCompleted]);
+
   async function handleStart(url: string) {
     const message = (cause: unknown) =>
       cause instanceof Error ? cause.message : String(cause);
@@ -123,26 +188,29 @@ function App() {
   }
 
   async function handleRate(rating: Rating) {
-    if (!ratingTarget) {
+    if (!dialogTarget) {
       return;
     }
+    const problemId = dialogTarget.problemId;
     setRatingBusy(true);
     setRatingError(null);
     try {
       await recordRating({
-        problemId: ratingTarget.problemId,
+        problemId,
         rating,
         idempotencyKey: newIdempotencyKey("manual"),
       });
       setRatingTarget(null);
+      setSuppressedPendingId(null);
+      await refreshPending();
       if (tab === "today") {
         await refreshToday();
       }
       if (tab === "list" || detail) {
         await refreshList();
       }
-      if (detail?.problem.id === ratingTarget.problemId) {
-        setDetail(await getProblemDetail(ratingTarget.problemId));
+      if (detail?.problem.id === problemId) {
+        setDetail(await getProblemDetail(problemId));
       }
     } catch (cause) {
       setRatingError(cause instanceof Error ? cause.message : String(cause));
@@ -191,6 +259,11 @@ function App() {
             onClick={() => setTab("today")}
           >
             Today
+            {pendingCompletions.length > 0 ? (
+              <span className="nav-badge" aria-label="pending ratings">
+                {pendingCompletions.length}
+              </span>
+            ) : null}
           </button>
           <button
             type="button"
@@ -294,14 +367,17 @@ function App() {
         />
       ) : null}
 
-      {ratingTarget ? (
+      {dialogTarget ? (
         <RatingDialog
-          title={ratingTarget.title}
+          title={dialogTarget.title}
           busy={ratingBusy}
           error={ratingError}
           onClose={() => {
             setRatingTarget(null);
             setRatingError(null);
+            if (pendingPrompt) {
+              setSuppressedPendingId(pendingPrompt.id);
+            }
           }}
           onRate={(rating) => void handleRate(rating)}
         />
