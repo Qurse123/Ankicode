@@ -507,7 +507,7 @@ fn file_database_reopens_reviews_schedules_and_assignments() {
 
     let mut reopened = Database::open(&path).unwrap();
     reopened.run_migrations().unwrap();
-    assert_eq!(reopened.schema_migration_count().unwrap(), 2);
+    assert_eq!(reopened.schema_migration_count().unwrap(), 3);
     assert_eq!(
         reopened.list_review_events(problem_id).unwrap()[0].idempotency_key(),
         "persistent-review"
