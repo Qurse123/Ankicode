@@ -1,50 +1,71 @@
 # Ankicode
 
-A macOS-first, local-only spaced-repetition desktop app for coding problems.
-This repository currently contains the Tauri 2, React/TypeScript, Rust, SQLite,
-FSRS, and Chromium extension foundation. Product behavior is implemented in
-later tasks.
+Local Anki-for-LeetCode: a macOS-first, local-only spaced-repetition desktop app
+for coding problems. Track problems in My List, get a daily assignment, capture
+accepted submissions from a Chromium extension over a loopback API, then rate
+and reschedule with FSRS — all data stays on this machine.
 
-The approved MVP boundaries are recorded in
+This repository is a Tauri 2 app (React/TypeScript frontend, Rust/SQLite/FSRS
+backend) plus an MV3 Chromium extension. The approved MVP boundaries are in
 [`docs/superpowers/specs/2026-07-18-ankicode-mvp-design.md`](docs/superpowers/specs/2026-07-18-ankicode-mvp-design.md).
 
 ## Prerequisites
 
 - macOS
 - Node.js `^20.19.0` or `>=22.12.0`, and npm
-- The stable Rust toolchain installed with `rustup`
+- The stable Rust toolchain installed with `rustup` (`cargo` on `PATH`)
 - Tauri's macOS system prerequisites, including Xcode Command Line Tools
 
 ## Setup
 
 ```sh
 npm install
+npx playwright install chromium
 npm run tauri dev
 ```
 
 Run the browser-only React shell with `npm run dev`.
 
-## Checks and builds
+## Extension
+
+1. Run `npm run build:extension`.
+2. Open `chrome://extensions` in a Chromium browser.
+3. Enable **Developer mode**.
+4. Choose **Load unpacked** and select `extension/dist`.
+5. Pair with the code shown during onboarding (or later in Settings).
+
+### Loopback API
+
+The desktop app exposes a local HTTP API on **`127.0.0.1:17342`** for the
+extension to submit accepted completions. It is intentionally loopback-only.
+
+## Verification
 
 ```sh
 npm run format:check
 npm run lint
 npm run typecheck
 npm test
-npm run build
 npm run test:extension
+npm run test:rust
+npm run test:e2e
+npm run build
 npm run build:extension
 cargo check --manifest-path src-tauri/Cargo.toml
-cargo test --manifest-path src-tauri/Cargo.toml
+cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 npm run tauri build
 ```
 
-## Load the Chromium extension
+Or run the aggregated gate:
 
-1. Run `npm run build:extension`.
-2. Open `chrome://extensions` in a Chromium browser.
-3. Enable **Developer mode**.
-4. Choose **Load unpacked** and select `extension/dist`.
+```sh
+npm run check
+```
 
-The extension is only a compile-safe MV3 scaffold at this stage. Pairing,
-capture, outbox, and loopback API behavior are intentionally not implemented.
+`test:e2e` runs a mocked Playwright journey against the Vite React shell
+(Chromium only; no desktop binary required).
+
+## Build notes
+
+`npm run tauri build` produces an **unsigned internal macOS build**. Code
+signing, notarization, and cloud sync are out of scope for this MVP.
