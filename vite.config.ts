@@ -1,11 +1,26 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 
 const host = process.env.TAURI_DEV_HOST;
+const e2e = process.env.VITE_E2E === "1";
+const rootDir = path.dirname(fileURLToPath(import.meta.url));
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
   plugins: [react()],
+  resolve: e2e
+    ? {
+        alias: {
+          "@tauri-apps/api/core": path.resolve(
+            rootDir,
+            "e2e/mocks/tauri-api-core.ts",
+          ),
+        },
+      }
+    : undefined,
   test: {
     environment: "jsdom",
     include: ["src/**/*.test.{ts,tsx}"],
