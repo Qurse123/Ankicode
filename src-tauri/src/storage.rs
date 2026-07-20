@@ -1,18 +1,27 @@
 //! SQLite connection, migration, and repository boundary.
 
 use crate::{
+    backup::{
+        BackupDocument, BackupProblem, BackupReviewEvent, BackupSchedule, BackupSettings,
+        BACKUP_VERSION,
+    },
     daily_queue::{AssignmentError, DailyAssignment, DailyAssignmentItem, DayWindow, DAILY_BUDGET},
     learning::{FsrsScheduler, LearningError, Rating, ReviewEvent, ScheduleState},
     problems::{Difficulty, NewProblem, Problem, ProblemError, ProblemStatus},
+    settings::{
+        generate_pairing_code, AppSettings, SettingsError, SettingsUpdate, DEFAULT_RETENTION,
+        DEFAULT_TIMEZONE,
+    },
 };
 use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 use sha2::{Digest, Sha256};
-use std::path::Path;
+use std::{collections::HashMap, path::Path};
 use thiserror::Error;
 
-const MIGRATIONS: &[(&str, &str)] = &[(
-    "0001_part2",
-    r#"
+const MIGRATIONS: &[(&str, &str)] = &[
+    (
+        "0001_part2",
+        r#"
     CREATE TABLE problems (
         id INTEGER PRIMARY KEY,
         slug TEXT NOT NULL UNIQUE CHECK(length(trim(slug)) > 0),
@@ -145,7 +154,25 @@ const MIGRATIONS: &[(&str, &str)] = &[(
             SELECT RAISE(ABORT, 'integration events are immutable');
         END;
     "#,
-)];
+    ),
+    (
+        "0002_part3",
+        r#"
+    CREATE TABLE app_settings (
+        id INTEGER PRIMARY KEY CHECK(id = 1),
+        timezone_id TEXT NOT NULL CHECK(length(trim(timezone_id)) > 0),
+        desired_retention REAL NOT NULL CHECK(
+            typeof(desired_retention) = 'real'
+            AND desired_retention > 0
+            AND desired_retention < 1
+        ),
+        onboarding_completed INTEGER NOT NULL CHECK(onboarding_completed IN (0, 1)),
+        pairing_code TEXT NOT NULL CHECK(length(trim(pairing_code)) > 0),
+        updated_at INTEGER NOT NULL CHECK(typeof(updated_at) = 'integer')
+    );
+    "#,
+    ),
+];
 
 #[derive(Debug, Error)]
 pub enum StorageError {
@@ -155,10 +182,14 @@ pub enum StorageError {
     Learning(#[from] LearningError),
     #[error("problem validation error: {0}")]
     Problem(#[from] ProblemError),
+    #[error("settings error: {0}")]
+    Settings(#[from] SettingsError),
     #[error("invalid persisted value: {0}")]
     InvalidData(String),
     #[error("problem {0} was not found")]
     ProblemNotFound(i64),
+    #[error("problem slug {0} was not found")]
+    ProblemSlugNotFound(String),
     #[error("a review did not produce a schedule")]
     MissingProjection,
     #[error("review idempotency key {key} has a different payload")]
@@ -181,6 +212,8 @@ pub enum StorageError {
     },
     #[error("invalid persisted assignment: {0}")]
     InvalidAssignment(#[from] AssignmentError),
+    #[error("backup validation failed: {0}")]
+    InvalidBackup(String),
 }
 
 pub struct Database {
@@ -245,6 +278,34 @@ impl Database {
             }
             transaction.commit()?;
         }
+        self.ensure_default_settings()?;
+        Ok(())
+    }
+
+    /// Seeds the singleton settings row when missing after migrations.
+    pub fn ensure_default_settings(&mut self) -> Result<(), StorageError> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let exists = transaction
+            .query_row("SELECT 1 FROM app_settings WHERE id = 1", [], |_| Ok(()))
+            .optional()?
+            .is_some();
+        if !exists {
+            let now = utc_now();
+            transaction.execute(
+                "INSERT INTO app_settings(
+                    id, timezone_id, desired_retention, onboarding_completed, pairing_code, updated_at
+                 ) VALUES (1, ?1, ?2, 0, ?3, ?4)",
+                params![
+                    DEFAULT_TIMEZONE,
+                    DEFAULT_RETENTION,
+                    generate_pairing_code(),
+                    now
+                ],
+            )?;
+        }
+        transaction.commit()?;
         Ok(())
     }
 
@@ -254,6 +315,261 @@ impl Database {
                 row.get(0)
             })
             .map_err(Into::into)
+    }
+
+    pub fn get_settings(&self) -> Result<AppSettings, StorageError> {
+        let settings = self.connection.query_row(
+            "SELECT timezone_id, desired_retention, onboarding_completed, pairing_code, updated_at
+             FROM app_settings WHERE id = 1",
+            [],
+            |row| {
+                Ok(AppSettings {
+                    timezone_id: row.get(0)?,
+                    desired_retention: row.get(1)?,
+                    onboarding_completed: row.get::<_, i64>(2)? != 0,
+                    pairing_code: row.get(3)?,
+                    updated_at: row.get(4)?,
+                })
+            },
+        )?;
+        settings.validate()?;
+        Ok(settings)
+    }
+
+    pub fn update_settings(
+        &mut self,
+        update: &SettingsUpdate,
+        now: i64,
+    ) -> Result<AppSettings, StorageError> {
+        update.validate()?;
+        let previous = self.get_settings()?;
+        let timezone_changed = previous.timezone_id != update.timezone_id;
+        let retention_changed =
+            (previous.desired_retention - update.desired_retention).abs() > f64::EPSILON;
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        transaction.execute(
+            "UPDATE app_settings
+             SET timezone_id = ?1, desired_retention = ?2, updated_at = ?3
+             WHERE id = 1",
+            params![update.timezone_id, update.desired_retention, now],
+        )?;
+        if timezone_changed {
+            clear_daily_queue_tables(&transaction)?;
+        }
+        if retention_changed {
+            let scheduler = FsrsScheduler::new(update.desired_retention as f32)?;
+            rebuild_all_projections_in(&transaction, &scheduler)?;
+        }
+        transaction.commit()?;
+        self.get_settings()
+    }
+
+    pub fn complete_onboarding(
+        &mut self,
+        update: &SettingsUpdate,
+        now: i64,
+    ) -> Result<AppSettings, StorageError> {
+        update.validate()?;
+        let previous = self.get_settings()?;
+        let timezone_changed = previous.timezone_id != update.timezone_id;
+        let retention_changed =
+            (previous.desired_retention - update.desired_retention).abs() > f64::EPSILON;
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        transaction.execute(
+            "UPDATE app_settings
+             SET timezone_id = ?1, desired_retention = ?2,
+                 onboarding_completed = 1, updated_at = ?3
+             WHERE id = 1",
+            params![update.timezone_id, update.desired_retention, now],
+        )?;
+        if timezone_changed {
+            clear_daily_queue_tables(&transaction)?;
+        }
+        if retention_changed {
+            let scheduler = FsrsScheduler::new(update.desired_retention as f32)?;
+            rebuild_all_projections_in(&transaction, &scheduler)?;
+        }
+        transaction.commit()?;
+        self.get_settings()
+    }
+
+    pub fn regenerate_pairing_code(&mut self, now: i64) -> Result<AppSettings, StorageError> {
+        let code = generate_pairing_code();
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        transaction.execute(
+            "UPDATE app_settings SET pairing_code = ?1, updated_at = ?2 WHERE id = 1",
+            params![code, now],
+        )?;
+        transaction.commit()?;
+        self.get_settings()
+    }
+
+    pub fn export_backup(&self) -> Result<BackupDocument, StorageError> {
+        let settings = self.get_settings()?;
+        let problems = self.list_problems()?;
+        let mut backup_problems = Vec::with_capacity(problems.len());
+        let mut review_events = Vec::new();
+        let mut schedules = Vec::new();
+        for problem in &problems {
+            backup_problems.push(BackupProblem {
+                slug: problem.slug.clone(),
+                title: problem.title.clone(),
+                url: problem.url.clone(),
+                difficulty: problem.difficulty,
+                status: problem.status,
+                added_at: problem.added_at,
+                updated_at: problem.updated_at,
+            });
+            for event in self.list_review_events(problem.id)? {
+                review_events.push(BackupReviewEvent {
+                    problem_slug: problem.slug.clone(),
+                    idempotency_key: event.idempotency_key().to_owned(),
+                    rating: event.rating(),
+                    reviewed_at: event.reviewed_at(),
+                });
+            }
+            if let Some(schedule) = self.get_schedule(problem.id)? {
+                schedules.push(BackupSchedule::from_state(problem.slug.clone(), &schedule));
+            }
+        }
+        Ok(BackupDocument {
+            version: BACKUP_VERSION,
+            settings: BackupSettings::from(&settings),
+            problems: backup_problems,
+            review_events,
+            schedules: Some(schedules),
+        })
+    }
+
+    /// Validates and replaces local learning data in one IMMEDIATE transaction.
+    pub fn import_backup(
+        &mut self,
+        document: &BackupDocument,
+        now: i64,
+    ) -> Result<AppSettings, StorageError> {
+        validate_backup(document)?;
+        let scheduler = FsrsScheduler::new(document.settings.desired_retention as f32)?;
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        clear_learning_tables(&transaction)?;
+
+        for problem in &document.problems {
+            NewProblem::new(
+                problem.slug.clone(),
+                problem.title.clone(),
+                problem.url.clone(),
+                problem.difficulty,
+            )?;
+            transaction.execute(
+                "INSERT INTO problems(slug, title, url, difficulty, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    problem.slug,
+                    problem.title,
+                    problem.url,
+                    problem.difficulty.as_db_str(),
+                    problem.updated_at
+                ],
+            )?;
+            let problem_id: i64 = transaction.query_row(
+                "SELECT id FROM problems WHERE slug = ?1",
+                [&problem.slug],
+                |row| row.get(0),
+            )?;
+            transaction.execute(
+                "INSERT INTO user_problems(problem_id, status, added_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![
+                    problem_id,
+                    problem.status.as_db_str(),
+                    problem.added_at,
+                    problem.updated_at
+                ],
+            )?;
+        }
+
+        let mut slug_to_id = HashMap::new();
+        {
+            let mut statement = transaction.prepare("SELECT id, slug FROM problems")?;
+            let rows = statement.query_map([], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            })?;
+            for row in rows {
+                let (id, slug) = row?;
+                slug_to_id.insert(slug, id);
+            }
+        }
+
+        let mut events_by_problem: HashMap<i64, Vec<&BackupReviewEvent>> = HashMap::new();
+        for event in &document.review_events {
+            let problem_id = *slug_to_id
+                .get(&event.problem_slug)
+                .ok_or_else(|| StorageError::ProblemSlugNotFound(event.problem_slug.clone()))?;
+            events_by_problem.entry(problem_id).or_default().push(event);
+        }
+        for events in events_by_problem.values_mut() {
+            events.sort_by_key(|event| (event.reviewed_at, event.idempotency_key.as_str()));
+        }
+        for (problem_id, events) in &events_by_problem {
+            for event in events {
+                ReviewEvent::new(
+                    event.idempotency_key.clone(),
+                    event.rating,
+                    event.reviewed_at,
+                )?;
+                transaction.execute(
+                    "INSERT INTO review_events(
+                        problem_id, idempotency_key, rating, rating_text, reviewed_at
+                     ) VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![
+                        problem_id,
+                        event.idempotency_key,
+                        event.rating.fsrs_value(),
+                        event.rating.as_db_str(),
+                        event.reviewed_at
+                    ],
+                )?;
+            }
+        }
+
+        transaction.execute(
+            "UPDATE app_settings
+             SET timezone_id = ?1, desired_retention = ?2, onboarding_completed = ?3,
+                 pairing_code = ?4, updated_at = ?5
+             WHERE id = 1",
+            params![
+                document.settings.timezone_id,
+                document.settings.desired_retention,
+                i64::from(document.settings.onboarding_completed),
+                document.settings.pairing_code,
+                now
+            ],
+        )?;
+
+        rebuild_all_projections_in(&transaction, &scheduler)?;
+        restore_immutable_triggers(&transaction)?;
+        transaction.commit()?;
+        self.get_settings()
+    }
+
+    /// Rebuilds every schedule projection using the provided scheduler.
+    pub fn rebuild_all_projections(
+        &mut self,
+        scheduler: &FsrsScheduler,
+    ) -> Result<(), StorageError> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        rebuild_all_projections_in(&transaction, scheduler)?;
+        transaction.commit()?;
+        Ok(())
     }
 
     pub fn upsert_problem(
@@ -287,7 +603,15 @@ impl Database {
         transaction.execute(
             "INSERT INTO user_problems(problem_id, status, added_at, updated_at)
              VALUES (?1, 'active', ?2, ?2)
-             ON CONFLICT(problem_id) DO NOTHING",
+             ON CONFLICT(problem_id) DO UPDATE SET
+                status = CASE
+                    WHEN user_problems.status = 'removed' THEN 'active'
+                    ELSE user_problems.status
+                END,
+                updated_at = CASE
+                    WHEN user_problems.status = 'removed' THEN excluded.updated_at
+                    ELSE user_problems.updated_at
+                END",
             params![problem_id, now],
         )?;
         transaction.commit()?;
@@ -713,4 +1037,162 @@ fn load_assignment(
 fn migration_checksum(sql: &str) -> String {
     let digest = Sha256::digest(sql.as_bytes());
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+fn utc_now() -> i64 {
+    chrono::Utc::now().timestamp()
+}
+
+fn validate_backup(document: &BackupDocument) -> Result<(), StorageError> {
+    if document.version != BACKUP_VERSION {
+        return Err(StorageError::InvalidBackup(format!(
+            "unsupported version {}",
+            document.version
+        )));
+    }
+    let settings = AppSettings {
+        timezone_id: document.settings.timezone_id.clone(),
+        desired_retention: document.settings.desired_retention,
+        onboarding_completed: document.settings.onboarding_completed,
+        pairing_code: document.settings.pairing_code.clone(),
+        updated_at: 0,
+    };
+    settings.validate()?;
+
+    let mut slugs = HashMap::new();
+    for problem in &document.problems {
+        NewProblem::new(
+            problem.slug.clone(),
+            problem.title.clone(),
+            problem.url.clone(),
+            problem.difficulty,
+        )?;
+        if slugs.insert(problem.slug.clone(), ()).is_some() {
+            return Err(StorageError::InvalidBackup(format!(
+                "duplicate problem slug {}",
+                problem.slug
+            )));
+        }
+    }
+    for event in &document.review_events {
+        if !slugs.contains_key(&event.problem_slug) {
+            return Err(StorageError::InvalidBackup(format!(
+                "review references missing slug {}",
+                event.problem_slug
+            )));
+        }
+        ReviewEvent::new(
+            event.idempotency_key.clone(),
+            event.rating,
+            event.reviewed_at,
+        )?;
+    }
+    if let Some(schedules) = &document.schedules {
+        for schedule in schedules {
+            if !slugs.contains_key(&schedule.problem_slug) {
+                return Err(StorageError::InvalidBackup(format!(
+                    "schedule references missing slug {}",
+                    schedule.problem_slug
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn drop_immutable_delete_triggers(transaction: &Transaction<'_>) -> Result<(), StorageError> {
+    transaction.execute_batch(
+        "
+        DROP TRIGGER IF EXISTS review_events_no_delete;
+        DROP TRIGGER IF EXISTS review_events_no_update;
+        DROP TRIGGER IF EXISTS daily_assignments_no_delete;
+        DROP TRIGGER IF EXISTS daily_assignments_no_update;
+        DROP TRIGGER IF EXISTS daily_queue_generations_no_delete;
+        DROP TRIGGER IF EXISTS daily_queue_generations_no_update;
+        ",
+    )?;
+    Ok(())
+}
+
+fn restore_immutable_triggers(transaction: &Transaction<'_>) -> Result<(), StorageError> {
+    transaction.execute_batch(
+        "
+        CREATE TRIGGER review_events_no_update
+            BEFORE UPDATE ON review_events BEGIN
+                SELECT RAISE(ABORT, 'review events are immutable');
+            END;
+        CREATE TRIGGER review_events_no_delete
+            BEFORE DELETE ON review_events BEGIN
+                SELECT RAISE(ABORT, 'review events are immutable');
+            END;
+        CREATE TRIGGER daily_assignments_no_update
+            BEFORE UPDATE ON daily_assignments BEGIN
+                SELECT RAISE(ABORT, 'daily assignments are immutable');
+            END;
+        CREATE TRIGGER daily_assignments_no_delete
+            BEFORE DELETE ON daily_assignments BEGIN
+                SELECT RAISE(ABORT, 'daily assignments are immutable');
+            END;
+        CREATE TRIGGER daily_queue_generations_no_update
+            BEFORE UPDATE ON daily_queue_generations BEGIN
+                SELECT RAISE(ABORT, 'daily queue generations are immutable');
+            END;
+        CREATE TRIGGER daily_queue_generations_no_delete
+            BEFORE DELETE ON daily_queue_generations BEGIN
+                SELECT RAISE(ABORT, 'daily queue generations are immutable');
+            END;
+        ",
+    )?;
+    Ok(())
+}
+
+fn clear_daily_queue_tables(transaction: &Transaction<'_>) -> Result<(), StorageError> {
+    drop_immutable_delete_triggers(transaction)?;
+    transaction.execute_batch(
+        "
+        DELETE FROM daily_assignments;
+        DELETE FROM daily_queue_generations;
+        ",
+    )?;
+    restore_immutable_triggers(transaction)?;
+    Ok(())
+}
+
+fn clear_learning_tables(transaction: &Transaction<'_>) -> Result<(), StorageError> {
+    drop_immutable_delete_triggers(transaction)?;
+    transaction.execute_batch(
+        "
+        DELETE FROM daily_assignments;
+        DELETE FROM daily_queue_generations;
+        DELETE FROM schedule_states;
+        DELETE FROM review_events;
+        DELETE FROM user_problems;
+        DELETE FROM problems;
+        ",
+    )?;
+    Ok(())
+}
+
+fn rebuild_all_projections_in(
+    transaction: &Transaction<'_>,
+    scheduler: &FsrsScheduler,
+) -> Result<(), StorageError> {
+    let problem_ids = {
+        let mut statement = transaction.prepare("SELECT problem_id FROM user_problems")?;
+        let rows = statement.query_map([], |row| row.get::<_, i64>(0))?;
+        rows.collect::<Result<Vec<_>, _>>()?
+    };
+    for problem_id in problem_ids {
+        let events = list_review_events_from(transaction, problem_id)?;
+        let state = scheduler.project(&events)?;
+        if let Some(ref state) = state {
+            upsert_schedule(transaction, problem_id, state)?;
+        } else {
+            transaction.execute(
+                "DELETE FROM schedule_states WHERE problem_id = ?1",
+                [problem_id],
+            )?;
+        }
+    }
+    Ok(())
 }

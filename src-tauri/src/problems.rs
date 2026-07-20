@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 use std::{fmt, str::FromStr};
 use thiserror::Error;
 
+const LEETCODE_PROBLEM_PREFIX: &str = "https://leetcode.com/problems/";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Difficulty {
@@ -87,6 +89,21 @@ impl NewProblem {
         Ok(value)
     }
 
+    /// Builds a problem from a pasted LeetCode URL, optional title, and difficulty.
+    pub fn from_url(
+        raw_url: &str,
+        title: Option<&str>,
+        difficulty: Difficulty,
+    ) -> Result<Self, ProblemError> {
+        let (slug, url) = parse_leetcode_problem_url(raw_url)?;
+        let title = title
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+            .unwrap_or_else(|| title_from_slug(&slug));
+        Self::new(slug, title, url, difficulty)
+    }
+
     pub fn validate(&self) -> Result<(), ProblemError> {
         if self.slug.trim().is_empty() {
             return Err(ProblemError::EmptyField("slug"));
@@ -94,19 +111,50 @@ impl NewProblem {
         if self.title.trim().is_empty() {
             return Err(ProblemError::EmptyField("title"));
         }
-        if !self
-            .slug
-            .bytes()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
-        {
+        if !is_valid_slug(&self.slug) {
             return Err(ProblemError::InvalidSlug);
         }
-        let canonical = format!("https://leetcode.com/problems/{}/", self.slug);
+        let canonical = canonical_problem_url(&self.slug);
         if self.url != canonical {
             return Err(ProblemError::InvalidUrl);
         }
         Ok(())
     }
+}
+
+/// Parses a pasted LeetCode problem URL into `(slug, canonical_url)`.
+pub fn parse_leetcode_problem_url(raw_url: &str) -> Result<(String, String), ProblemError> {
+    let trimmed = raw_url.trim();
+    let without_query = trimmed.split(['?', '#']).next().unwrap_or(trimmed);
+    let rest = without_query
+        .strip_prefix(LEETCODE_PROBLEM_PREFIX)
+        .or_else(|| without_query.strip_prefix("http://leetcode.com/problems/"))
+        .ok_or(ProblemError::InvalidUrl)?;
+    let slug = rest
+        .trim_matches('/')
+        .split('/')
+        .next()
+        .unwrap_or("")
+        .trim();
+    if slug.is_empty() || !is_valid_slug(slug) {
+        return Err(ProblemError::InvalidSlug);
+    }
+    Ok((slug.to_owned(), canonical_problem_url(slug)))
+}
+
+pub fn canonical_problem_url(slug: &str) -> String {
+    format!("{LEETCODE_PROBLEM_PREFIX}{slug}/")
+}
+
+pub fn title_from_slug(slug: &str) -> String {
+    slug.replace('-', " ")
+}
+
+fn is_valid_slug(slug: &str) -> bool {
+    !slug.is_empty()
+        && slug
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -200,5 +248,22 @@ mod tests {
             Difficulty::Easy
         )
         .is_err());
+    }
+
+    #[test]
+    fn url_parser_normalizes_canonical_form() {
+        let (slug, url) =
+            parse_leetcode_problem_url("https://leetcode.com/problems/two-sum/?tab=description")
+                .unwrap();
+        assert_eq!(slug, "two-sum");
+        assert_eq!(url, "https://leetcode.com/problems/two-sum/");
+        let problem = NewProblem::from_url(
+            "https://leetcode.com/problems/two-sum",
+            None,
+            Difficulty::Easy,
+        )
+        .unwrap();
+        assert_eq!(problem.title, "two sum");
+        assert!(parse_leetcode_problem_url("https://example.com/problems/x/").is_err());
     }
 }
