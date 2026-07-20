@@ -15,7 +15,7 @@
     "build:extension": "npm run build --workspace @ankicode/extension",
     "typecheck": "tsc --noEmit --pretty false && tsc --noEmit --pretty false -p tsconfig.test.json && tsc --noEmit --pretty false -p tsconfig.node.json",
     "typecheck:extension": "npm run typecheck --workspace @ankicode/extension",
-    "lint": "eslint . --max-warnings 0",
+    "lint": "eslint . --max-warnings 0 --ignore-pattern 'extension/dist/**'",
     "format": "prettier --write . && cargo fmt --manifest-path src-tauri/Cargo.toml",
     "format:check": "prettier --check . && cargo fmt --manifest-path src-tauri/Cargo.toml -- --check",
     "test": "vitest run",
