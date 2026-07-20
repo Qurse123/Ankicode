@@ -20,6 +20,11 @@ describe("extension manifest", () => {
     expect(manifest.manifest_version).toBe(3);
     expect(manifest.background.service_worker).toBe("background.js");
     expect(manifest.content_scripts[0]?.js).toContain("content.js");
+    expect(manifest.permissions).toEqual(
+      expect.arrayContaining(["storage", "alarms"]),
+    );
+    expect(manifest.host_permissions).toContain("http://127.0.0.1:17342/*");
+    expect(manifest.action.default_popup).toBe("popup.html");
   });
 
   it("builds content scripts as one classic-script artifact", async () => {

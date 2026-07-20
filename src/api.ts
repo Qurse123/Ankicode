@@ -5,6 +5,8 @@ import type {
   BackupDocument,
   Bootstrap,
   Difficulty,
+  LoopbackStatus,
+  PendingCompletion,
   Problem,
   ProblemDetail,
   ProblemListItem,
@@ -69,6 +71,14 @@ export function updateSettings(args: {
 
 export function regeneratePairingCode(): Promise<AppSettings> {
   return invoke("regenerate_pairing_code");
+}
+
+export function listPendingCompletions(): Promise<PendingCompletion[]> {
+  return invoke("list_pending_completions");
+}
+
+export function getLoopbackStatus(): Promise<LoopbackStatus> {
+  return invoke("get_loopback_status");
 }
 
 export function exportBackup(): Promise<BackupDocument> {
