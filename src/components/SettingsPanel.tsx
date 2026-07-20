@@ -1,13 +1,14 @@
-import { useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
 import {
   exportBackup,
+  getLoopbackStatus,
   importBackup,
   regeneratePairingCode,
   updateSettings,
 } from "../api";
 import { timezoneOptions } from "../timezones";
-import type { AppSettings, BackupDocument } from "../types";
+import type { AppSettings, BackupDocument, LoopbackStatus } from "../types";
 
 type SettingsPanelProps = {
   settings: AppSettings;
@@ -27,10 +28,17 @@ export function SettingsPanel({
     settings.desiredRetention,
   );
   const [pairingCode, setPairingCode] = useState(settings.pairingCode);
+  const [loopback, setLoopback] = useState<LoopbackStatus | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    void getLoopbackStatus()
+      .then(setLoopback)
+      .catch(() => setLoopback(null));
+  }, []);
 
   async function handleSave(event: FormEvent) {
     event.preventDefault();
@@ -57,7 +65,9 @@ export function SettingsPanel({
       const next = await regeneratePairingCode();
       setPairingCode(next.pairingCode);
       onSettingsChange(next);
-      setMessage("Pairing code regenerated.");
+      setMessage(
+        "Pairing code regenerated. Existing extension tokens stay valid; only the one-time code changed.",
+      );
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -154,7 +164,16 @@ export function SettingsPanel({
       </form>
 
       <div className="settings-block">
+        <h2>Extension loopback API</h2>
+        <p className="muted">
+          Local API bound to {loopback?.url ?? "http://127.0.0.1:17342"} for the
+          Chromium extension only.
+        </p>
         <h2>Pairing code</h2>
+        <p className="muted">
+          Enter this one-time code in the extension popup. Regenerating
+          invalidates the code, not already-paired tokens.
+        </p>
         <code className="pairing-code">{pairingCode}</code>
         <button
           type="button"

@@ -14,6 +14,7 @@ use crate::{
     },
 };
 use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{collections::HashMap, path::Path};
 use thiserror::Error;
@@ -172,6 +173,25 @@ const MIGRATIONS: &[(&str, &str)] = &[
     );
     "#,
     ),
+    (
+        "0003_part4",
+        r#"
+    CREATE TABLE pending_completions (
+        id INTEGER PRIMARY KEY,
+        problem_id INTEGER NOT NULL REFERENCES user_problems(problem_id) ON DELETE RESTRICT,
+        idempotency_key TEXT NOT NULL UNIQUE CHECK(length(trim(idempotency_key)) > 0),
+        accepted_at INTEGER NOT NULL CHECK(typeof(accepted_at) = 'integer'),
+        created_at INTEGER NOT NULL CHECK(typeof(created_at) = 'integer'),
+        resolved_at INTEGER CHECK(resolved_at IS NULL OR typeof(resolved_at) = 'integer')
+    );
+    CREATE INDEX pending_completions_unresolved
+        ON pending_completions(problem_id, created_at)
+        WHERE resolved_at IS NULL;
+    CREATE UNIQUE INDEX pending_completions_one_unresolved
+        ON pending_completions(problem_id)
+        WHERE resolved_at IS NULL;
+    "#,
+    ),
 ];
 
 #[derive(Debug, Error)]
@@ -214,6 +234,39 @@ pub enum StorageError {
     InvalidAssignment(#[from] AssignmentError),
     #[error("backup validation failed: {0}")]
     InvalidBackup(String),
+    #[error("invalid pairing code")]
+    InvalidPairingCode,
+    #[error("invalid extension origin")]
+    InvalidOrigin,
+    #[error("integration client was not found or token is invalid")]
+    UnauthorizedClient,
+    #[error("integration client has been revoked")]
+    ClientRevoked,
+    #[error("request origin does not match the paired client")]
+    OriginMismatch,
+    #[error("integration idempotency key {key} has a different payload")]
+    IntegrationIdempotencyConflict { key: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IntegrationClient {
+    pub id: i64,
+    pub allowed_origin: String,
+    pub created_at: i64,
+    pub revoked_at: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PendingCompletion {
+    pub id: i64,
+    pub problem_id: i64,
+    pub slug: String,
+    pub title: String,
+    pub difficulty: Difficulty,
+    pub url: String,
+    pub idempotency_key: String,
+    pub accepted_at: i64,
+    pub created_at: i64,
 }
 
 pub struct Database {
@@ -408,6 +461,298 @@ impl Database {
         )?;
         transaction.commit()?;
         self.get_settings()
+    }
+
+    /// Pairs an extension origin with a one-time code and returns `(client_id, plaintext_token)`.
+    /// The plaintext token is never persisted; only `sha256(token)` is stored.
+    pub fn create_client(
+        &mut self,
+        code: &str,
+        origin: &str,
+        now: i64,
+    ) -> Result<(i64, String), StorageError> {
+        let origin = origin.trim();
+        if !is_chrome_extension_origin(origin) {
+            return Err(StorageError::InvalidOrigin);
+        }
+        let token = generate_bearer_token();
+        let token_hash = hash_token(&token);
+        let new_code = generate_pairing_code();
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        // Atomically consume the one-time pairing code inside the writer lock.
+        let rotated = transaction.execute(
+            "UPDATE app_settings
+             SET pairing_code = ?1, updated_at = ?2
+             WHERE id = 1 AND pairing_code = ?3",
+            params![new_code, now, code.trim()],
+        )?;
+        if rotated == 0 {
+            return Err(StorageError::InvalidPairingCode);
+        }
+        transaction.execute(
+            "INSERT INTO integration_clients(token_hash, allowed_origin, created_at, revoked_at)
+             VALUES (?1, ?2, ?3, NULL)",
+            params![token_hash, origin, now],
+        )?;
+        let client_id = transaction.last_insert_rowid();
+        transaction.commit()?;
+        Ok((client_id, token))
+    }
+
+    pub fn authenticate_client(
+        &self,
+        token: &str,
+        origin: &str,
+    ) -> Result<IntegrationClient, StorageError> {
+        let token_hash = hash_token(token);
+        let client = self
+            .connection
+            .query_row(
+                "SELECT id, allowed_origin, created_at, revoked_at
+                 FROM integration_clients WHERE token_hash = ?1",
+                [token_hash],
+                |row| {
+                    Ok(IntegrationClient {
+                        id: row.get(0)?,
+                        allowed_origin: row.get(1)?,
+                        created_at: row.get(2)?,
+                        revoked_at: row.get(3)?,
+                    })
+                },
+            )
+            .optional()?
+            .ok_or(StorageError::UnauthorizedClient)?;
+        if client.revoked_at.is_some() {
+            return Err(StorageError::ClientRevoked);
+        }
+        if client.allowed_origin != origin.trim() {
+            return Err(StorageError::OriginMismatch);
+        }
+        Ok(client)
+    }
+
+    /// Records an integration event. Returns `true` when this call inserted a new event.
+    pub fn record_integration_event(
+        &mut self,
+        client_id: i64,
+        idempotency_key: &str,
+        kind: &str,
+        payload_json: &str,
+        now: i64,
+    ) -> Result<bool, StorageError> {
+        let key = idempotency_key.trim();
+        if key.is_empty() {
+            return Err(StorageError::InvalidData(
+                "idempotency key must not be empty".to_owned(),
+            ));
+        }
+        let existing = self
+            .connection
+            .query_row(
+                "SELECT kind, payload_json FROM integration_events
+                 WHERE client_id = ?1 AND idempotency_key = ?2",
+                params![client_id, key],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            )
+            .optional()?;
+        if let Some((existing_kind, existing_payload)) = existing {
+            if existing_kind != kind || existing_payload != payload_json {
+                return Err(StorageError::IntegrationIdempotencyConflict {
+                    key: key.to_owned(),
+                });
+            }
+            return Ok(false);
+        }
+        self.connection.execute(
+            "INSERT INTO integration_events(client_id, idempotency_key, received_at, kind, payload_json)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![client_id, key, now, kind, payload_json],
+        )?;
+        Ok(true)
+    }
+
+    pub fn get_problem_by_slug(&self, slug: &str) -> Result<Option<Problem>, StorageError> {
+        let raw = self
+            .connection
+            .query_row(
+                "SELECT p.id, p.slug, p.title, p.url, p.difficulty,
+                        u.status, u.added_at, u.updated_at
+                 FROM problems p JOIN user_problems u ON u.problem_id = p.id
+                 WHERE p.slug = ?1",
+                [slug],
+                raw_problem,
+            )
+            .optional()?;
+        raw.map(parse_problem).transpose()
+    }
+
+    pub fn create_pending_completion(
+        &mut self,
+        problem_id: i64,
+        idempotency_key: &str,
+        accepted_at: i64,
+        now: i64,
+    ) -> Result<PendingCompletion, StorageError> {
+        let key = idempotency_key.trim();
+        if key.is_empty() {
+            return Err(StorageError::InvalidData(
+                "idempotency key must not be empty".to_owned(),
+            ));
+        }
+        if self.get_problem(problem_id)?.is_none() {
+            return Err(StorageError::ProblemNotFound(problem_id));
+        }
+        // Prefer a single unresolved pending per problem.
+        if let Some(id) = self
+            .connection
+            .query_row(
+                "SELECT id FROM pending_completions
+                 WHERE problem_id = ?1 AND resolved_at IS NULL",
+                [problem_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()?
+        {
+            return self
+                .get_pending_completion(id)?
+                .ok_or(StorageError::InvalidData(
+                    "missing pending completion".to_owned(),
+                ));
+        }
+        if let Some((id, existing_problem_id)) = self
+            .connection
+            .query_row(
+                "SELECT id, problem_id FROM pending_completions WHERE idempotency_key = ?1",
+                [key],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+            )
+            .optional()?
+        {
+            if existing_problem_id != problem_id {
+                return Err(StorageError::IntegrationIdempotencyConflict {
+                    key: key.to_owned(),
+                });
+            }
+            return self
+                .get_pending_completion(id)?
+                .ok_or(StorageError::InvalidData(
+                    "missing pending completion".to_owned(),
+                ));
+        }
+        self.connection.execute(
+            "INSERT INTO pending_completions(
+                problem_id, idempotency_key, accepted_at, created_at, resolved_at
+             ) VALUES (?1, ?2, ?3, ?4, NULL)",
+            params![problem_id, key, accepted_at, now],
+        )?;
+        let id = self.connection.last_insert_rowid();
+        self.get_pending_completion(id)?
+            .ok_or(StorageError::InvalidData(
+                "missing pending completion".to_owned(),
+            ))
+    }
+
+    pub fn list_pending_completions(&self) -> Result<Vec<PendingCompletion>, StorageError> {
+        let mut statement = self.connection.prepare(
+            "SELECT pc.id, pc.problem_id, p.slug, p.title, p.difficulty, p.url,
+                    pc.idempotency_key, pc.accepted_at, pc.created_at
+             FROM pending_completions pc
+             JOIN problems p ON p.id = pc.problem_id
+             WHERE pc.resolved_at IS NULL
+             ORDER BY pc.created_at, pc.id",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, String>(5)?,
+                row.get::<_, String>(6)?,
+                row.get::<_, i64>(7)?,
+                row.get::<_, i64>(8)?,
+            ))
+        })?;
+        let mut pending = Vec::new();
+        for row in rows {
+            let (id, problem_id, slug, title, difficulty, url, key, accepted_at, created_at) = row?;
+            pending.push(PendingCompletion {
+                id,
+                problem_id,
+                slug,
+                title,
+                difficulty: difficulty
+                    .parse()
+                    .map_err(|error: ProblemError| StorageError::InvalidData(error.to_string()))?,
+                url,
+                idempotency_key: key,
+                accepted_at,
+                created_at,
+            });
+        }
+        Ok(pending)
+    }
+
+    pub fn resolve_pending_for_problem(
+        &mut self,
+        problem_id: i64,
+        now: i64,
+    ) -> Result<usize, StorageError> {
+        let changed = self.connection.execute(
+            "UPDATE pending_completions
+             SET resolved_at = ?1
+             WHERE problem_id = ?2 AND resolved_at IS NULL",
+            params![now, problem_id],
+        )?;
+        Ok(changed)
+    }
+
+    fn get_pending_completion(&self, id: i64) -> Result<Option<PendingCompletion>, StorageError> {
+        let row = self
+            .connection
+            .query_row(
+                "SELECT pc.id, pc.problem_id, p.slug, p.title, p.difficulty, p.url,
+                        pc.idempotency_key, pc.accepted_at, pc.created_at
+                 FROM pending_completions pc
+                 JOIN problems p ON p.id = pc.problem_id
+                 WHERE pc.id = ?1",
+                [id],
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, String>(4)?,
+                        row.get::<_, String>(5)?,
+                        row.get::<_, String>(6)?,
+                        row.get::<_, i64>(7)?,
+                        row.get::<_, i64>(8)?,
+                    ))
+                },
+            )
+            .optional()?;
+        row.map(
+            |(id, problem_id, slug, title, difficulty, url, key, accepted_at, created_at)| {
+                Ok(PendingCompletion {
+                    id,
+                    problem_id,
+                    slug,
+                    title,
+                    difficulty: difficulty.parse().map_err(|error: ProblemError| {
+                        StorageError::InvalidData(error.to_string())
+                    })?,
+                    url,
+                    idempotency_key: key,
+                    accepted_at,
+                    created_at,
+                })
+            },
+        )
+        .transpose()
     }
 
     pub fn export_backup(&self) -> Result<BackupDocument, StorageError> {
@@ -1039,6 +1384,23 @@ fn migration_checksum(sql: &str) -> String {
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
+fn hash_token(token: &str) -> String {
+    hex::encode(Sha256::digest(token.as_bytes()))
+}
+
+fn generate_bearer_token() -> String {
+    use rand::RngCore;
+    let mut bytes = [0u8; 32];
+    rand::rng().fill_bytes(&mut bytes);
+    hex::encode(bytes)
+}
+
+fn is_chrome_extension_origin(origin: &str) -> bool {
+    origin.starts_with("chrome-extension://")
+        && origin.len() > "chrome-extension://".len()
+        && !origin.contains([' ', '\n', '\r', '\t'])
+}
+
 fn utc_now() -> i64 {
     chrono::Utc::now().timestamp()
 }
@@ -1164,6 +1526,7 @@ fn clear_learning_tables(transaction: &Transaction<'_>) -> Result<(), StorageErr
         "
         DELETE FROM daily_assignments;
         DELETE FROM daily_queue_generations;
+        DELETE FROM pending_completions;
         DELETE FROM schedule_states;
         DELETE FROM review_events;
         DELETE FROM user_problems;
