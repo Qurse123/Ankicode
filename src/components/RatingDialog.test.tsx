@@ -37,13 +37,13 @@ describe("RatingDialog", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "good" }));
+    fireEvent.click(screen.getByRole("button", { name: /medium/i }));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("record_rating", {
         args: {
           problemId: 7,
-          rating: "good",
+          rating: "medium",
           idempotencyKey: "test-key",
         },
       });

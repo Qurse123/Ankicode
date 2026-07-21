@@ -1,5 +1,6 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 
+import { formatDueLabel } from "../scheduleLabel";
 import type { Difficulty, ProblemListItem, ProblemStatus } from "../types";
 
 type MyListProps = {
@@ -13,19 +14,8 @@ type MyListProps = {
   }) => Promise<void>;
   onOpen: (problemId: number) => void;
   onStatus: (problemId: number, status: ProblemStatus) => Promise<void>;
+  onDelete: (problemId: number) => Promise<void>;
 };
-
-function dueLabel(dueAt: number | null): string {
-  if (dueAt == null) {
-    return "new";
-  }
-  const due = new Date(dueAt * 1000);
-  const now = Date.now();
-  if (due.getTime() <= now) {
-    return "due";
-  }
-  return `due ${due.toLocaleDateString()}`;
-}
 
 export function MyList({
   problems,
@@ -34,6 +24,7 @@ export function MyList({
   onAdd,
   onOpen,
   onStatus,
+  onDelete,
 }: MyListProps) {
   const [url, setUrl] = useState("");
   const [title, setTitle] = useState("");
@@ -47,6 +38,11 @@ export function MyList({
   );
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<ProblemListItem | null>(
+    null,
+  );
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -70,6 +66,20 @@ export function MyList({
     });
   }, [problems, search, difficultyFilter, statusFilter]);
 
+  useEffect(() => {
+    if (!deleteTarget) {
+      return;
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && !deleteBusy) {
+        setDeleteTarget(null);
+        setDeleteError(null);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [deleteTarget, deleteBusy]);
+
   async function handleAdd(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
@@ -87,6 +97,22 @@ export function MyList({
       setFormError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget) {
+      return;
+    }
+    setDeleteBusy(true);
+    setDeleteError(null);
+    try {
+      await onDelete(deleteTarget.id);
+      setDeleteTarget(null);
+    } catch (cause) {
+      setDeleteError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setDeleteBusy(false);
     }
   }
 
@@ -169,7 +195,6 @@ export function MyList({
             <option value="active">Active</option>
             <option value="paused">Paused</option>
             <option value="archived">Archived</option>
-            <option value="removed">Removed</option>
           </select>
         </label>
       </div>
@@ -191,7 +216,7 @@ export function MyList({
                   {problem.difficulty}
                 </span>
                 <span className="pill">{problem.status}</span>
-                <span>{dueLabel(problem.dueAt)}</span>
+                <span>{formatDueLabel(problem.dueAt)}</span>
               </span>
             </button>
             <div className="row-actions">
@@ -222,14 +247,71 @@ export function MyList({
               <button
                 type="button"
                 className="ghost-button"
-                onClick={() => onStatus(problem.id, "removed")}
+                onClick={() => {
+                  setDeleteError(null);
+                  setDeleteTarget(problem);
+                }}
               >
-                Remove
+                Delete
               </button>
             </div>
           </li>
         ))}
       </ul>
+
+      {deleteTarget ? (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onClick={() => {
+            if (!deleteBusy) {
+              setDeleteTarget(null);
+              setDeleteError(null);
+            }
+          }}
+        >
+          <div
+            className="modal-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <p className="eyebrow">Delete problem</p>
+            <h2 id="delete-title">{deleteTarget.title}</h2>
+            <p className="panel-copy">
+              Permanently remove this problem and its review history? This cannot
+              be undone.
+            </p>
+            {deleteError ? (
+              <p className="error-text" role="alert">
+                {deleteError}
+              </p>
+            ) : null}
+            <div className="row-actions">
+              <button
+                type="button"
+                className="primary-button"
+                disabled={deleteBusy}
+                onClick={() => void confirmDelete()}
+              >
+                Delete permanently
+              </button>
+              <button
+                type="button"
+                className="ghost-button"
+                disabled={deleteBusy}
+                onClick={() => {
+                  setDeleteTarget(null);
+                  setDeleteError(null);
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
