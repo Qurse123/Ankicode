@@ -1,10 +1,10 @@
+import { formatDueLabel } from "../scheduleLabel";
 import type { TodayItem, TodayView } from "../types";
 
 type TodayProps = {
   today: TodayView | null;
   loading: boolean;
   error: string | null;
-  retentionTarget: number;
   streakDays: number;
   onStart: (item: TodayItem) => void;
   onRate: (item: TodayItem) => void;
@@ -14,7 +14,6 @@ export function Today({
   today,
   loading,
   error,
-  retentionTarget,
   streakDays,
   onStart,
   onRate,
@@ -38,8 +37,8 @@ export function Today({
   }
 
   const items = today?.items ?? [];
-  const retentionPercent = Math.round(retentionTarget * 100);
-
+  const remaining = items.filter((item) => !item.reviewedToday).length;
+  const reviewed = items.length - remaining;
   return (
     <section className="page-section" aria-labelledby="today-title">
       <div className="page-heading">
@@ -49,18 +48,18 @@ export function Today({
 
       <div className="stats-row" aria-label="Today stats">
         <article className="stat-card">
-          <p className="stat-label">Due today</p>
-          <p className="stat-value">{items.length}</p>
+          <p className="stat-label">Remaining</p>
+          <p className="stat-value">{remaining}</p>
+        </article>
+        <article className="stat-card">
+          <p className="stat-label">Reviewed</p>
+          <p className="stat-value">{reviewed}</p>
         </article>
         <article className="stat-card">
           <p className="stat-label">Streak</p>
           <p className="stat-value accent">
             {streakDays} {streakDays === 1 ? "day" : "days"}
           </p>
-        </article>
-        <article className="stat-card">
-          <p className="stat-label">Retention</p>
-          <p className="stat-value">{retentionPercent}%</p>
         </article>
       </div>
 
@@ -74,7 +73,12 @@ export function Today({
       ) : (
         <ul className="today-list">
           {items.map((item) => (
-            <li key={item.problemId} className="today-row">
+            <li
+              key={item.problemId}
+              className={
+                item.reviewedToday ? "today-row today-row-reviewed" : "today-row"
+              }
+            >
               <div>
                 <h2>{item.title}</h2>
                 <p className="meta-line">
@@ -82,6 +86,16 @@ export function Today({
                     {item.difficulty}
                   </span>
                   <span>cost {item.cost}</span>
+                  {item.reviewedToday ? (
+                    <>
+                      <span className="pill status-reviewed">
+                        rated {item.lastRating ?? "today"}
+                      </span>
+                      <span>{formatDueLabel(item.dueAt)}</span>
+                    </>
+                  ) : (
+                    <span className="pill status-pending">not rated</span>
+                  )}
                 </p>
               </div>
               <div className="row-actions">
@@ -97,7 +111,7 @@ export function Today({
                   className="secondary-button"
                   onClick={() => onRate(item)}
                 >
-                  Rate
+                  {item.reviewedToday ? "Re-rate" : "Rate"}
                 </button>
               </div>
             </li>

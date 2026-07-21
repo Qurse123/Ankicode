@@ -12,7 +12,9 @@ const SECONDS_PER_DAY: i64 = 86_400;
 pub enum Rating {
     Again,
     Hard,
-    Good,
+    /// FSRS grade 3 (Anki “Good”); labeled Medium in the product UI.
+    #[serde(alias = "good")]
+    Medium,
     Easy,
 }
 
@@ -21,7 +23,7 @@ impl Rating {
         match self {
             Self::Again => 1,
             Self::Hard => 2,
-            Self::Good => 3,
+            Self::Medium => 3,
             Self::Easy => 4,
         }
     }
@@ -30,7 +32,7 @@ impl Rating {
         match self {
             Self::Again => "again",
             Self::Hard => "hard",
-            Self::Good => "good",
+            Self::Medium => "medium",
             Self::Easy => "easy",
         }
     }
@@ -43,7 +45,7 @@ impl TryFrom<u32> for Rating {
         match value {
             1 => Ok(Self::Again),
             2 => Ok(Self::Hard),
-            3 => Ok(Self::Good),
+            3 => Ok(Self::Medium),
             4 => Ok(Self::Easy),
             _ => Err(LearningError::InvalidRating(value.to_string())),
         }
@@ -57,7 +59,8 @@ impl FromStr for Rating {
         match value {
             "again" => Ok(Self::Again),
             "hard" => Ok(Self::Hard),
-            "good" => Ok(Self::Good),
+            // Accept legacy backup/export spelling.
+            "medium" | "good" => Ok(Self::Medium),
             "easy" => Ok(Self::Easy),
             _ => Err(LearningError::InvalidRating(value.to_owned())),
         }
@@ -276,7 +279,7 @@ mod tests {
         let cases = [
             (Rating::Again, 1, "again"),
             (Rating::Hard, 2, "hard"),
-            (Rating::Good, 3, "good"),
+            (Rating::Medium, 3, "medium"),
             (Rating::Easy, 4, "easy"),
         ];
         for (rating, number, text) in cases {
@@ -287,6 +290,7 @@ mod tests {
         }
         assert!(Rating::try_from(0).is_err());
         assert!("great".parse::<Rating>().is_err());
+        assert_eq!("good".parse::<Rating>().unwrap(), Rating::Medium);
     }
 
     #[test]
@@ -303,7 +307,7 @@ mod tests {
         let scheduler = FsrsScheduler::default();
         let item = scheduler
             .to_fsrs_item(&[
-                review(Rating::Good, T0),
+                review(Rating::Medium, T0),
                 review(Rating::Easy, T0 + DAY + DAY / 2),
             ])
             .unwrap();
@@ -311,7 +315,7 @@ mod tests {
         assert_eq!(item.reviews[1].delta_t, 1);
 
         let error = scheduler
-            .to_fsrs_item(&[review(Rating::Good, T0), review(Rating::Good, T0 - 1)])
+            .to_fsrs_item(&[review(Rating::Medium, T0), review(Rating::Medium, T0 - 1)])
             .unwrap_err();
         assert!(matches!(error, LearningError::OutOfOrder { .. }));
     }
@@ -321,7 +325,7 @@ mod tests {
         let scheduler = FsrsScheduler::default();
         let error = scheduler
             .to_fsrs_item(&[
-                review(Rating::Good, i64::MIN),
+                review(Rating::Medium, i64::MIN),
                 review(Rating::Easy, i64::MAX),
             ])
             .unwrap_err();
@@ -334,7 +338,7 @@ mod tests {
         assert_eq!(scheduler.project(&[]).unwrap(), None);
 
         let first = scheduler
-            .project(&[review(Rating::Good, T0)])
+            .project(&[review(Rating::Medium, T0)])
             .unwrap()
             .unwrap();
         assert!(first.stability.is_finite());
@@ -342,7 +346,7 @@ mod tests {
         assert!(first.due_at >= T0 + DAY);
 
         let history = [
-            review(Rating::Good, T0),
+            review(Rating::Medium, T0),
             review(Rating::Hard, T0 + 3 * DAY),
             review(Rating::Easy, T0 + 8 * DAY),
         ];
@@ -356,7 +360,7 @@ mod tests {
     fn fsrs_6_6_1_projection_vector_is_stable() {
         let state = FsrsScheduler::default()
             .project(&[
-                review(Rating::Good, T0),
+                review(Rating::Medium, T0),
                 review(Rating::Hard, T0 + 3 * DAY),
                 review(Rating::Easy, T0 + 8 * DAY),
             ])
@@ -370,15 +374,15 @@ mod tests {
 
     #[test]
     fn review_event_requires_nonempty_idempotency_key() {
-        assert!(ReviewEvent::new("", Rating::Good, T0).is_err());
-        assert!(ReviewEvent::new("   ", Rating::Good, T0).is_err());
-        let event = ReviewEvent::new("review-1", Rating::Good, T0).unwrap();
+        assert!(ReviewEvent::new("", Rating::Medium, T0).is_err());
+        assert!(ReviewEvent::new("   ", Rating::Medium, T0).is_err());
+        let event = ReviewEvent::new("review-1", Rating::Medium, T0).unwrap();
         assert_eq!(event.idempotency_key(), "review-1");
     }
 
     #[test]
     fn deserialization_cannot_bypass_review_key_validation() {
-        let json = format!(r#"{{"idempotency_key":" ","rating":"good","reviewed_at":{T0}}}"#);
+        let json = format!(r#"{{"idempotency_key":" ","rating":"medium","reviewed_at":{T0}}}"#);
         assert!(serde_json::from_str::<ReviewEvent>(&json).is_err());
     }
 }
