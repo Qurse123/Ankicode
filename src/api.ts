@@ -51,7 +51,7 @@ export function setProblemStatus(args: {
 }
 
 export function getProblemDetail(problemId: number): Promise<ProblemDetail> {
-  return invoke("get_problem_detail", { problem_id: problemId });
+  return invoke("get_problem_detail", { problemId });
 }
 
 export function recordRating(args: {
