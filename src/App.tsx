@@ -290,6 +290,8 @@ function App() {
             today={today}
             loading={todayLoading}
             error={todayError}
+            retentionTarget={settings.desiredRetention}
+            streakDays={0}
             onStart={(item: TodayItem) => void handleStart(item.url)}
             onRate={(item: TodayItem) => {
               setRatingError(null);
