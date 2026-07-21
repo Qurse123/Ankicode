@@ -1,87 +1,78 @@
 # Ankicode
 
-Local Anki-for-LeetCode: a macOS-first, local-only spaced-repetition desktop app
-for coding problems. Track problems in My List, get a daily assignment, capture
-accepted submissions from a Chromium extension over a loopback API, then rate
-and reschedule with FSRS — all data stays on this machine.
+Ankicode is local Anki-style spaced repetition for LeetCode.
+Rate problems with Again / Hard / Medium / Easy (FSRS), get a daily queue, and keep every review on your Mac—no cloud sync.
 
-This repository is a Tauri 2 app (React/TypeScript frontend, Rust/SQLite/FSRS
-backend) plus an MV3 Chromium extension. The approved MVP boundaries are in
-[`docs/superpowers/specs/2026-07-18-ankicode-mvp-design.md`](docs/superpowers/specs/2026-07-18-ankicode-mvp-design.md).
+This repository is a Tauri 2 desktop app (React/TypeScript + Rust/SQLite/FSRS) plus a Chromium MV3 extension. Design boundaries live in [`docs/superpowers/specs/2026-07-18-ankicode-mvp-design.md`](docs/superpowers/specs/2026-07-18-ankicode-mvp-design.md).
 
 ## Prerequisites
 
-- macOS
+- **macOS** (desktop app is macOS-first)
 - Node.js `^20.19.0` or `>=22.12.0`, and npm
-- The stable Rust toolchain installed with `rustup` (`cargo` on `PATH`)
-- Tauri's macOS system prerequisites, including Xcode Command Line Tools
+- Stable Rust via `rustup` (`cargo` on `PATH`)
+- Xcode Command Line Tools (Tauri macOS deps)
 
-## Run the desktop app (no Cursor / no separate backend)
+## Run on your computer
 
-The Tauri `.app` already includes the Rust backend, SQLite, and the loopback
-API on `127.0.0.1:17342`. You do **not** need to keep a terminal or Cursor open.
+### Option A — installed desktop app (recommended)
+
+Builds a standalone `.app` that includes the Rust backend, SQLite, and the loopback API on `127.0.0.1:17342`. No terminal needs to stay open.
 
 ```sh
+git clone https://github.com/Qurse123/Ankicode.git
+cd Ankicode
 npm install
-npm run tauri build -- --bundles app
+npm run tauri -- build --bundles app
+```
+
+Then install and open (path may be `src-tauri/target/...` or your `CARGO_TARGET_DIR`):
+
+```sh
+# Typical local build output:
 cp -R src-tauri/target/release/bundle/macos/Ankicode.app /Applications/
 open -a Ankicode
 ```
 
-If you still see a “DESKTOP SCAFFOLD” screen, you’re opening an old install —
-replace `/Applications/Ankicode.app` with a fresh build as above.
+If the UI looks like an old scaffold, replace `/Applications/Ankicode.app` with a fresh build and reopen.
 
-### Development (hot reload)
+### Option B — development (hot reload)
 
 ```sh
 npm install
 npx playwright install chromium
-npm run tauri dev
+npm run tauri -- dev
 ```
 
-`tauri dev` starts Vite + the Rust backend together. Browser-only UI (no
-backend): `npm run dev`.
+`tauri dev` starts Vite and the Rust backend together. Frontend-only (no backend): `npm run dev`.
 
-## Extension
+### Chromium extension (Accepted → rate prompt)
 
-1. Run `npm run build:extension`.
-2. Open `chrome://extensions` in a Chromium browser.
-3. Enable **Developer mode**.
-4. Choose **Load unpacked** and select `extension/dist`.
-5. Pair with the code shown during onboarding (or later in Settings).
+Keep the desktop app running, then:
 
-### Loopback API
+1. `npm run build:extension`
+2. Open `chrome://extensions` → enable **Developer mode**
+3. **Load unpacked** → select `extension/dist` (not the repo root `dist/`)
+4. Pair with the code from Ankicode **Settings** (or onboarding)
 
-The desktop app exposes a local HTTP API on **`127.0.0.1:17342`** for the
-extension to submit accepted completions. It is intentionally loopback-only.
+The extension talks only to the local loopback API at **`http://127.0.0.1:17342`**.
 
-## Verification
+## Daily loop (what to expect)
 
-```sh
-npm run format:check
-npm run lint
-npm run typecheck
-npm test
-npm run test:extension
-npm run test:rust
-npm run test:e2e
-npm run build
-npm run build:extension
-cargo check --manifest-path src-tauri/Cargo.toml
-cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
-npm run tauri build
-```
+1. Add Easy/Medium problems in **My List** (Hard is tracked but not scheduled).
+2. **Today** assigns a small budget (Easy=1, Medium=2).
+3. Solve on LeetCode (or open from Today) and/or rate manually with **Again / Hard / Medium / Easy**.
+4. FSRS sets the next due date; rated items show on Today, and due items can return on later days.
 
-Or run the aggregated gate:
+## Checks before you push
 
 ```sh
 npm run check
 ```
 
-`test:e2e` runs a mocked Playwright journey against the Vite React shell
-(Chromium only; no desktop binary required).
+That runs format, lint, typecheck, unit tests, extension tests, Playwright e2e, frontend/extension builds, and Rust tests.
+
+Pull requests are also gated by GitHub Actions (`.github/workflows/ci.yml`) so breaking changes fail CI before merge.
 
 ## Build notes
 
-`npm run tauri build` produces an **unsigned internal macOS build**. Code
-signing, notarization, and cloud sync are out of scope for this MVP.
+`npm run tauri -- build` produces an **unsigned internal macOS build**. Code signing, notarization, and cloud sync are out of scope for this MVP.
