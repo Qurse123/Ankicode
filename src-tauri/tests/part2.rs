@@ -34,7 +34,7 @@ fn rating_has_stable_numeric_and_string_encodings() {
     let cases = [
         (Rating::Again, 1, "again"),
         (Rating::Hard, 2, "hard"),
-        (Rating::Good, 3, "good"),
+        (Rating::Medium, 3, "medium"),
         (Rating::Easy, 4, "easy"),
     ];
     for (rating, number, text) in cases {
@@ -61,7 +61,7 @@ fn event_conversion_rejects_reverse_time_and_uses_whole_utc_days() {
     let scheduler = FsrsScheduler::default();
     let item = scheduler
         .to_fsrs_item(&[
-            review(Rating::Good, T0),
+            review(Rating::Medium, T0),
             review(Rating::Easy, T0 + DAY + DAY / 2),
         ])
         .unwrap();
@@ -69,7 +69,7 @@ fn event_conversion_rejects_reverse_time_and_uses_whole_utc_days() {
     assert_eq!(item.reviews[1].delta_t, 1);
 
     let error = scheduler
-        .to_fsrs_item(&[review(Rating::Good, T0), review(Rating::Good, T0 - 1)])
+        .to_fsrs_item(&[review(Rating::Medium, T0), review(Rating::Medium, T0 - 1)])
         .unwrap_err();
     assert!(matches!(error, LearningError::OutOfOrder { .. }));
 }
@@ -80,7 +80,7 @@ fn projection_handles_empty_initial_and_repeated_histories_deterministically() {
     assert_eq!(scheduler.project(&[]).unwrap(), None);
 
     let first = scheduler
-        .project(&[review(Rating::Good, T0)])
+        .project(&[review(Rating::Medium, T0)])
         .unwrap()
         .unwrap();
     assert!(first.stability.is_finite());
@@ -88,7 +88,7 @@ fn projection_handles_empty_initial_and_repeated_histories_deterministically() {
     assert!(first.due_at >= T0 + DAY);
 
     let history = [
-        review(Rating::Good, T0),
+        review(Rating::Medium, T0),
         review(Rating::Hard, T0 + 3 * DAY),
         review(Rating::Easy, T0 + 8 * DAY),
     ];
@@ -162,7 +162,7 @@ fn migrations_are_idempotent_and_constraints_are_enforced() {
         .upsert_problem(&problem("two-sum", Difficulty::Easy), T0)
         .unwrap();
     assert!(db
-        .record_review(999_999, review(Rating::Good, T0), &FsrsScheduler::default())
+        .record_review(999_999, review(Rating::Medium, T0), &FsrsScheduler::default())
         .is_err());
     assert!(db.get_problem(saved.id).unwrap().is_some());
 }
@@ -177,7 +177,7 @@ fn metadata_upsert_preserves_lifecycle_and_history() {
         .unwrap();
     db.record_review(
         original.id,
-        review(Rating::Good, T0 + 2),
+        review(Rating::Medium, T0 + 2),
         &FsrsScheduler::default(),
     )
     .unwrap();
@@ -204,7 +204,7 @@ fn recording_and_rebuilding_projection_are_transactional() {
         .unwrap();
     let scheduler = FsrsScheduler::default();
     let state = db
-        .record_review(saved.id, review(Rating::Good, T0 + DAY), &scheduler)
+        .record_review(saved.id, review(Rating::Medium, T0 + DAY), &scheduler)
         .unwrap();
     assert_eq!(db.get_schedule(saved.id).unwrap(), Some(state.clone()));
 
@@ -352,7 +352,7 @@ fn review_retries_are_idempotent_and_payload_conflicts_are_typed() {
         .upsert_problem(&problem("idempotent", Difficulty::Easy), T0)
         .unwrap();
     let scheduler = FsrsScheduler::default();
-    let event = ReviewEvent::new("stable-key", Rating::Good, T0).unwrap();
+    let event = ReviewEvent::new("stable-key", Rating::Medium, T0).unwrap();
     let first = db
         .record_review(saved.id, event.clone(), &scheduler)
         .unwrap();
@@ -398,7 +398,7 @@ fn chronological_append_is_enforced_and_same_timestamp_order_is_preserved() {
     let scheduler = FsrsScheduler::default();
     db.record_review(
         saved.id,
-        ReviewEvent::new("first", Rating::Good, T0).unwrap(),
+        ReviewEvent::new("first", Rating::Medium, T0).unwrap(),
         &scheduler,
     )
     .unwrap();
@@ -449,7 +449,7 @@ fn removed_is_distinct_from_archived_and_only_affects_future_days() {
     let fixed = db.generate_daily_assignment(&today).unwrap();
     db.record_review(
         removed.id,
-        ReviewEvent::new("removed-history", Rating::Good, T0 + 1).unwrap(),
+        ReviewEvent::new("removed-history", Rating::Medium, T0 + 1).unwrap(),
         &FsrsScheduler::default(),
     )
     .unwrap();
@@ -493,7 +493,7 @@ fn file_database_reopens_reviews_schedules_and_assignments() {
         let schedule = db
             .record_review(
                 saved.id,
-                ReviewEvent::new("persistent-review", Rating::Good, T0).unwrap(),
+                ReviewEvent::new("persistent-review", Rating::Medium, T0).unwrap(),
                 &FsrsScheduler::default(),
             )
             .unwrap();
@@ -507,7 +507,7 @@ fn file_database_reopens_reviews_schedules_and_assignments() {
 
     let mut reopened = Database::open(&path).unwrap();
     reopened.run_migrations().unwrap();
-    assert_eq!(reopened.schema_migration_count().unwrap(), 3);
+    assert_eq!(reopened.schema_migration_count().unwrap(), 4);
     assert_eq!(
         reopened.list_review_events(problem_id).unwrap()[0].idempotency_key(),
         "persistent-review"
@@ -568,7 +568,7 @@ fn file_schema_rejects_mutation_and_assignment_corruption() {
         .unwrap();
         db.record_review(
             easy.id,
-            ReviewEvent::new("immutable-review", Rating::Good, T0).unwrap(),
+            ReviewEvent::new("immutable-review", Rating::Medium, T0).unwrap(),
             &FsrsScheduler::default(),
         )
         .unwrap();
