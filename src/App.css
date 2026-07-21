@@ -415,6 +415,20 @@ button {
   animation: fade-up 420ms ease-out;
 }
 
+.today-row-reviewed {
+  opacity: 0.78;
+}
+
+.pill.status-reviewed {
+  color: var(--easy);
+  background: var(--easy-bg);
+}
+
+.pill.status-pending {
+  color: var(--ink-soft);
+  background: rgba(193, 90, 48, 0.1);
+}
+
 .today-row h2,
 .problem-title {
   margin: 0 0 0.45rem;
@@ -509,10 +523,27 @@ button {
 }
 
 .rating-button {
-  text-transform: capitalize;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  align-items: flex-start;
+  text-align: left;
+  text-transform: none;
   background: #fffcf7;
   border-color: var(--line);
   color: var(--ink);
+}
+
+.rating-label {
+  text-transform: capitalize;
+  font-weight: 700;
+}
+
+.rating-hint {
+  font-size: 0.75rem;
+  font-weight: 500;
+  opacity: 0.8;
+  line-height: 1.3;
 }
 
 .rating-again {
@@ -523,7 +554,7 @@ button {
   color: var(--medium);
 }
 
-.rating-good,
+.rating-medium,
 .rating-easy {
   color: var(--easy);
 }

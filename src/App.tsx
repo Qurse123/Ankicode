@@ -3,6 +3,7 @@ import { useEffect, useEffectEvent, useState } from "react";
 import "./App.css";
 import {
   addProblemFromUrl,
+  deleteProblem,
   getBootstrap,
   getProblemDetail,
   getToday,
@@ -53,6 +54,9 @@ function App() {
   const [ratingTarget, setRatingTarget] = useState<RatingTarget | null>(null);
   const [ratingBusy, setRatingBusy] = useState(false);
   const [ratingError, setRatingError] = useState<string | null>(null);
+  const [ratingSuccessDueAt, setRatingSuccessDueAt] = useState<number | null>(
+    null,
+  );
   const [pendingCompletions, setPendingCompletions] = useState<
     PendingCompletion[]
   >([]);
@@ -100,8 +104,10 @@ function App() {
     }
   }
 
-  async function refreshToday() {
-    setTodayLoading(true);
+  async function refreshToday(options?: { silent?: boolean }) {
+    if (!options?.silent) {
+      setTodayLoading(true);
+    }
     setTodayError(null);
     try {
       setToday(await getToday());
@@ -109,19 +115,25 @@ function App() {
     } catch (cause) {
       setTodayError(cause instanceof Error ? cause.message : String(cause));
     } finally {
-      setTodayLoading(false);
+      if (!options?.silent) {
+        setTodayLoading(false);
+      }
     }
   }
 
-  async function refreshList() {
-    setListLoading(true);
+  async function refreshList(options?: { silent?: boolean }) {
+    if (!options?.silent) {
+      setListLoading(true);
+    }
     setListError(null);
     try {
       setProblems(await listProblemsView());
     } catch (cause) {
       setListError(cause instanceof Error ? cause.message : String(cause));
     } finally {
-      setListLoading(false);
+      if (!options?.silent) {
+        setListLoading(false);
+      }
     }
   }
 
@@ -195,20 +207,20 @@ function App() {
     setRatingBusy(true);
     setRatingError(null);
     try {
-      await recordRating({
+      const schedule = await recordRating({
         problemId,
         rating,
         idempotencyKey: newIdempotencyKey("manual"),
       });
-      setRatingTarget(null);
+      setRatingTarget({
+        problemId,
+        title: dialogTarget.title,
+      });
+      setRatingSuccessDueAt(schedule.due_at);
       setSuppressedPendingId(null);
       await refreshPending();
-      if (tab === "today") {
-        await refreshToday();
-      }
-      if (tab === "list" || detail) {
-        await refreshList();
-      }
+      await refreshToday({ silent: true });
+      await refreshList({ silent: true });
       if (detail?.problem.id === problemId) {
         setDetail(await getProblemDetail(problemId));
       }
@@ -290,11 +302,11 @@ function App() {
             today={today}
             loading={todayLoading}
             error={todayError}
-            retentionTarget={settings.desiredRetention}
             streakDays={0}
             onStart={(item: TodayItem) => void handleStart(item.url)}
             onRate={(item: TodayItem) => {
               setRatingError(null);
+              setRatingSuccessDueAt(null);
               setRatingTarget({ problemId: item.problemId, title: item.title });
             }}
           />
@@ -335,6 +347,23 @@ function App() {
                 );
               }
             }}
+            onDelete={async (problemId) => {
+              try {
+                setListError(null);
+                await deleteProblem(problemId);
+                if (detail?.problem.id === problemId) {
+                  setDetail(null);
+                  setDetailError(null);
+                }
+                await refreshList();
+                await refreshToday();
+                await refreshPending();
+              } catch (cause) {
+                setListError(
+                  cause instanceof Error ? cause.message : String(cause),
+                );
+              }
+            }}
           />
         ) : null}
 
@@ -361,6 +390,7 @@ function App() {
           onStart={() => void handleStart(detail.problem.url)}
           onRate={() => {
             setRatingError(null);
+            setRatingSuccessDueAt(null);
             setRatingTarget({
               problemId: detail.problem.id,
               title: detail.problem.title,
@@ -374,10 +404,12 @@ function App() {
           title={dialogTarget.title}
           busy={ratingBusy}
           error={ratingError}
+          successDueAt={ratingSuccessDueAt}
           onClose={() => {
             setRatingTarget(null);
             setRatingError(null);
-            if (pendingPrompt) {
+            setRatingSuccessDueAt(null);
+            if (pendingPrompt && ratingSuccessDueAt == null) {
               setSuppressedPendingId(pendingPrompt.id);
             }
           }}
