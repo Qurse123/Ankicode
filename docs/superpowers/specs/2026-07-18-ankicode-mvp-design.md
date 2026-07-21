@@ -43,7 +43,7 @@ integration behavior belong to later tasks.
 ## Learning model
 
 A listed problem is one schedulable item. A review is completed only after the
-user manually records one of `Again`, `Hard`, `Good`, or `Easy`. Each rating
+user manually records one of `Again`, `Hard`, `Medium`, or `Easy`. Each rating
 appends an immutable review event; derived schedule state is a projection that
 can be rebuilt from those events. Event append and projection update will be
 transactional.

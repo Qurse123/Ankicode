@@ -50,12 +50,13 @@ test.describe("Ankicode product journey", () => {
     ).toBeVisible();
     await expect(page.getByLabel("pending ratings")).toHaveText("1");
 
-    await ratingDialog.getByRole("button", { name: "good" }).click();
+    await ratingDialog.getByRole("button", { name: /medium/i }).click();
 
+    await expect(ratingDialog.getByText(/Next review:/i)).toBeVisible();
+    await ratingDialog.getByRole("button", { name: "Done" }).click();
     await expect(ratingDialog).toHaveCount(0);
-    await expect(
-      page.getByText("No problems assigned for today."),
-    ).toBeVisible();
+    await expect(page.getByText("rated medium")).toBeVisible();
+    await expect(page.getByText("due tomorrow")).toBeVisible();
     await expect(page.getByLabel("pending ratings")).toHaveCount(0);
 
     const calls = await getInvokeCalls(page);
@@ -72,7 +73,7 @@ test.describe("Ankicode product journey", () => {
     expect(ratingCalls[0]?.args).toMatchObject({
       args: {
         problemId: 1,
-        rating: "good",
+        rating: "medium",
       },
     });
   });

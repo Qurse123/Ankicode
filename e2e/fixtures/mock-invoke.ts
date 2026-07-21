@@ -26,7 +26,7 @@ export async function installTauriInvokeMock(page: Page): Promise<void> {
   await page.addInitScript(() => {
     type Difficulty = "easy" | "medium" | "hard";
     type ProblemStatus = "active" | "paused" | "archived" | "removed";
-    type Rating = "again" | "hard" | "good" | "easy";
+    type Rating = "again" | "hard" | "medium" | "easy";
 
     type Settings = {
       timezoneId: string;
@@ -67,6 +67,9 @@ export async function installTauriInvokeMock(page: Page): Promise<void> {
       difficulty: Difficulty;
       cost: number;
       position: number;
+      reviewedToday: boolean;
+      lastRating: Rating | null;
+      dueAt: number | null;
     };
 
     type PendingCompletion = {
@@ -213,6 +216,9 @@ export async function installTauriInvokeMock(page: Page): Promise<void> {
               difficulty: problem.difficulty,
               cost: 1,
               position: 0,
+              reviewedToday: false,
+              lastRating: null,
+              dueAt: null,
             },
           ];
           return problem;
@@ -237,8 +243,15 @@ export async function installTauriInvokeMock(page: Page): Promise<void> {
             (item) => item.problemId !== payload.problemId,
           );
           const dueAt = nowSeconds() + 86_400;
-          todayItems = todayItems.filter(
-            (item) => item.problemId !== payload.problemId,
+          todayItems = todayItems.map((item) =>
+            item.problemId === payload.problemId
+              ? {
+                  ...item,
+                  reviewedToday: true,
+                  lastRating: payload.rating,
+                  dueAt,
+                }
+              : item,
           );
           problems = problems.map((problem) =>
             problem.id === payload.problemId
@@ -251,6 +264,14 @@ export async function installTauriInvokeMock(page: Page): Promise<void> {
             due_at: dueAt,
             last_review_at: nowSeconds(),
           };
+        }
+
+        case "delete_problem": {
+          const problemId = Number(args?.problemId ?? args?.problem_id);
+          problems = problems.filter((item) => item.id !== problemId);
+          todayItems = todayItems.filter((item) => item.problemId !== problemId);
+          pending = pending.filter((item) => item.problemId !== problemId);
+          return;
         }
 
         case "set_problem_status_cmd": {

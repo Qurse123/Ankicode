@@ -50,6 +50,10 @@ export function setProblemStatus(args: {
   return invoke("set_problem_status_cmd", { args });
 }
 
+export function deleteProblem(problemId: number): Promise<void> {
+  return invoke("delete_problem", { problemId });
+}
+
 export function getProblemDetail(problemId: number): Promise<ProblemDetail> {
   return invoke("get_problem_detail", { problemId });
 }
