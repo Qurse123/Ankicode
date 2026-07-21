@@ -1,6 +1,6 @@
 export type Difficulty = "easy" | "medium" | "hard";
 export type ProblemStatus = "active" | "paused" | "archived" | "removed";
-export type Rating = "again" | "hard" | "good" | "easy";
+export type Rating = "again" | "hard" | "medium" | "easy";
 
 export type AppSettings = {
   timezoneId: string;
@@ -40,6 +40,9 @@ export type TodayItem = {
   difficulty: Difficulty;
   cost: number;
   position: number;
+  reviewedToday: boolean;
+  lastRating: Rating | null;
+  dueAt: number | null;
 };
 
 export type TodayView = {

@@ -39,6 +39,7 @@ describe("MyList", () => {
         onAdd={vi.fn()}
         onOpen={vi.fn()}
         onStatus={vi.fn()}
+        onDelete={vi.fn()}
       />,
     );
 
@@ -50,5 +51,27 @@ describe("MyList", () => {
 
     expect(screen.queryByText("two sum")).not.toBeInTheDocument();
     expect(screen.getByText("median of two")).toBeInTheDocument();
+  });
+
+  it("calls onDelete after in-app confirm", async () => {
+    const onDelete = vi.fn().mockResolvedValue(undefined);
+    render(
+      <MyList
+        problems={problems}
+        loading={false}
+        error={null}
+        onAdd={vi.fn()}
+        onOpen={vi.fn()}
+        onStatus={vi.fn()}
+        onDelete={onDelete}
+      />,
+    );
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Delete" })[0]);
+    expect(screen.getByRole("dialog", { name: "two sum" })).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Delete permanently" }),
+    );
+    expect(onDelete).toHaveBeenCalledWith(1);
   });
 });
