@@ -10,6 +10,8 @@ describe("Today", () => {
         today={{ localDate: "2024-06-01", items: [] }}
         loading={false}
         error={null}
+        retentionTarget={0.91}
+        streakDays={12}
         onStart={vi.fn()}
         onRate={vi.fn()}
       />,
@@ -38,6 +40,8 @@ describe("Today", () => {
         today={{ localDate: "2024-06-01", items: [item] }}
         loading={false}
         error={null}
+        retentionTarget={0.91}
+        streakDays={12}
         onStart={onStart}
         onRate={onRate}
       />,
@@ -45,6 +49,9 @@ describe("Today", () => {
 
     expect(screen.getByText("two sum")).toBeInTheDocument();
     expect(screen.getByText("cost 1")).toBeInTheDocument();
+    expect(screen.getByText("Due today")).toBeInTheDocument();
+    expect(screen.getByText("12 days")).toBeInTheDocument();
+    expect(screen.getByText("91%")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Start" }));
     fireEvent.click(screen.getByRole("button", { name: "Rate" }));
     expect(onStart).toHaveBeenCalledWith(item);
