@@ -96,6 +96,12 @@ pub struct TodayItemDto {
     pub difficulty: Difficulty,
     pub cost: u8,
     pub position: u8,
+    /// True when the latest review falls inside today's civil day window.
+    pub reviewed_today: bool,
+    /// Latest rating recorded today, if any.
+    pub last_rating: Option<Rating>,
+    /// Next FSRS due instant in UTC epoch seconds.
+    pub due_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -224,6 +230,24 @@ pub fn get_today(state: State<'_, AppState>) -> Result<TodayViewDto, CommandErro
                 .db
                 .get_problem(item.problem_id)?
                 .ok_or(StorageError::ProblemNotFound(item.problem_id))?;
+            let schedule = inner.db.get_schedule(problem.id)?;
+            let (reviewed_today, last_rating, due_at) = match schedule {
+                Some(state) => {
+                    let reviewed_today = state.last_review_at >= window.start_utc()
+                        && state.last_review_at < window.end_utc();
+                    let last_rating = if reviewed_today {
+                        inner
+                            .db
+                            .list_review_events(problem.id)?
+                            .last()
+                            .map(|event| event.rating())
+                    } else {
+                        None
+                    };
+                    (reviewed_today, last_rating, Some(state.due_at))
+                }
+                None => (false, None, None),
+            };
             items.push(TodayItemDto {
                 problem_id: problem.id,
                 slug: problem.slug,
@@ -232,8 +256,12 @@ pub fn get_today(state: State<'_, AppState>) -> Result<TodayViewDto, CommandErro
                 difficulty: problem.difficulty,
                 cost: item.cost,
                 position: item.position,
+                reviewed_today,
+                last_rating,
+                due_at,
             });
         }
+        items.sort_by_key(|item| (item.reviewed_today, item.position));
         Ok(TodayViewDto {
             local_date: assignment.local_date,
             items,
@@ -286,6 +314,14 @@ pub fn set_problem_status_cmd(
         inner
             .db
             .set_problem_status(args.problem_id, args.status, now())?;
+        Ok(())
+    })
+}
+
+#[tauri::command]
+pub fn delete_problem(state: State<'_, AppState>, problem_id: i64) -> Result<(), CommandError> {
+    with_state(&state, |inner| {
+        inner.db.delete_problem(problem_id)?;
         Ok(())
     })
 }
