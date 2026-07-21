@@ -88,7 +88,7 @@ fn export_import_roundtrip_replaces_learning_data() {
         .unwrap();
     db.record_review(
         easy.id,
-        ReviewEvent::new("r1", Rating::Good, T0 + 10).unwrap(),
+        ReviewEvent::new("r1", Rating::Medium, T0 + 10).unwrap(),
         &FsrsScheduler::default(),
     )
     .unwrap();
@@ -156,7 +156,7 @@ fn import_rejects_invalid_backup() {
         review_events: vec![BackupReviewEvent {
             problem_slug: "missing".to_owned(),
             idempotency_key: "r1".to_owned(),
-            rating: Rating::Good,
+            rating: Rating::Medium,
             reviewed_at: T0,
         }],
         schedules: None,
@@ -267,4 +267,52 @@ fn readding_removed_problem_reactivates_it() {
         .unwrap();
     assert_eq!(again.id, saved.id);
     assert_eq!(again.status, ProblemStatus::Active);
+}
+
+#[test]
+fn delete_problem_removes_history_and_allows_readd() {
+    let mut db = Database::in_memory().unwrap();
+    let scheduler = FsrsScheduler::new(0.9).unwrap();
+    let saved = db
+        .upsert_problem(&problem("two-sum", Difficulty::Easy), T0)
+        .unwrap();
+    let window = DayWindow::new("2024-07-01", T0, T0 + DAY).unwrap();
+    let assignment = db.generate_daily_assignment(&window).unwrap();
+    assert!(assignment
+        .items
+        .iter()
+        .any(|item| item.problem_id == saved.id));
+    db.record_review(
+        saved.id,
+        ReviewEvent::new("review-1", Rating::Medium, T0 + 1).unwrap(),
+        &scheduler,
+    )
+    .unwrap();
+    db.create_pending_completion(saved.id, "accepted:two-sum", T0 + 2, T0 + 2)
+        .unwrap();
+
+    db.delete_problem(saved.id).unwrap();
+
+    assert!(db.get_problem(saved.id).unwrap().is_none());
+    assert!(db.list_problems().unwrap().is_empty());
+    assert!(db.list_review_events(saved.id).unwrap().is_empty());
+    assert!(db.get_schedule(saved.id).unwrap().is_none());
+    assert!(db.list_pending_completions().unwrap().is_empty());
+    let remaining = db.load_daily_assignment("2024-07-01").unwrap().unwrap();
+    assert!(!remaining
+        .items
+        .iter()
+        .any(|item| item.problem_id == saved.id));
+    assert!(matches!(
+        db.delete_problem(saved.id).unwrap_err(),
+        ankicode_lib::storage::StorageError::ProblemNotFound(_)
+    ));
+
+    let again = db
+        .upsert_problem(&problem("two-sum", Difficulty::Easy), T0 + 3)
+        .unwrap();
+    assert_eq!(again.status, ProblemStatus::Active);
+    assert!(db.get_problem(again.id).unwrap().is_some());
+    assert!(db.list_review_events(again.id).unwrap().is_empty());
+    assert!(db.get_schedule(again.id).unwrap().is_none());
 }

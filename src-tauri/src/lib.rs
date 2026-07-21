@@ -43,6 +43,7 @@ pub fn run() {
             commands::list_problems_view,
             commands::add_problem_from_url,
             commands::set_problem_status_cmd,
+            commands::delete_problem,
             commands::get_problem_detail,
             commands::record_rating,
             commands::list_pending_completions,

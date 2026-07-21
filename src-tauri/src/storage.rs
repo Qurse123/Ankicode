@@ -192,6 +192,63 @@ const MIGRATIONS: &[(&str, &str)] = &[
         WHERE resolved_at IS NULL;
     "#,
     ),
+    (
+        "0004_rating_medium",
+        r#"
+    DROP TRIGGER IF EXISTS review_events_no_update;
+    DROP TRIGGER IF EXISTS review_events_no_delete;
+    DROP TRIGGER IF EXISTS review_events_chronological;
+
+    CREATE TABLE review_events_v2 (
+        id INTEGER PRIMARY KEY,
+        problem_id INTEGER NOT NULL REFERENCES user_problems(problem_id) ON DELETE RESTRICT,
+        idempotency_key TEXT NOT NULL CHECK(length(trim(idempotency_key)) > 0),
+        rating INTEGER NOT NULL CHECK(rating BETWEEN 1 AND 4),
+        rating_text TEXT NOT NULL CHECK(rating_text IN ('again', 'hard', 'medium', 'easy')),
+        reviewed_at INTEGER NOT NULL CHECK(typeof(reviewed_at) = 'integer'),
+        CHECK(
+            (rating = 1 AND rating_text = 'again') OR
+            (rating = 2 AND rating_text = 'hard') OR
+            (rating = 3 AND rating_text = 'medium') OR
+            (rating = 4 AND rating_text = 'easy')
+        ),
+        UNIQUE(problem_id, idempotency_key)
+    );
+
+    INSERT INTO review_events_v2(
+        id, problem_id, idempotency_key, rating, rating_text, reviewed_at
+    )
+    SELECT
+        id,
+        problem_id,
+        idempotency_key,
+        rating,
+        CASE rating_text WHEN 'good' THEN 'medium' ELSE rating_text END,
+        reviewed_at
+    FROM review_events;
+
+    DROP TABLE review_events;
+    ALTER TABLE review_events_v2 RENAME TO review_events;
+
+    CREATE INDEX review_events_problem_time
+        ON review_events(problem_id, reviewed_at, id);
+    CREATE TRIGGER review_events_no_update
+        BEFORE UPDATE ON review_events BEGIN
+            SELECT RAISE(ABORT, 'review events are immutable');
+        END;
+    CREATE TRIGGER review_events_no_delete
+        BEFORE DELETE ON review_events BEGIN
+            SELECT RAISE(ABORT, 'review events are immutable');
+        END;
+    CREATE TRIGGER review_events_chronological
+        BEFORE INSERT ON review_events BEGIN
+            SELECT CASE WHEN NEW.reviewed_at < COALESCE((
+                SELECT MAX(reviewed_at) FROM review_events
+                WHERE problem_id = NEW.problem_id
+            ), NEW.reviewed_at) THEN RAISE(ABORT, 'review events must be chronological') END;
+        END;
+    "#,
+    ),
 ];
 
 #[derive(Debug, Error)]
@@ -996,6 +1053,43 @@ impl Database {
         if changed == 0 {
             return Err(StorageError::ProblemNotFound(problem_id));
         }
+        Ok(())
+    }
+
+    /// Permanently deletes a problem and all related learning data.
+    pub fn delete_problem(&mut self, problem_id: i64) -> Result<(), StorageError> {
+        if self.get_problem(problem_id)?.is_none() {
+            return Err(StorageError::ProblemNotFound(problem_id));
+        }
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        // Review events and daily assignments are normally immutable; drop those
+        // delete guards only for this explicit user-initiated purge.
+        drop_immutable_delete_triggers(&transaction)?;
+        transaction.execute(
+            "DELETE FROM pending_completions WHERE problem_id = ?1",
+            [problem_id],
+        )?;
+        transaction.execute(
+            "DELETE FROM daily_assignments WHERE problem_id = ?1",
+            [problem_id],
+        )?;
+        transaction.execute(
+            "DELETE FROM schedule_states WHERE problem_id = ?1",
+            [problem_id],
+        )?;
+        transaction.execute(
+            "DELETE FROM review_events WHERE problem_id = ?1",
+            [problem_id],
+        )?;
+        transaction.execute(
+            "DELETE FROM user_problems WHERE problem_id = ?1",
+            [problem_id],
+        )?;
+        transaction.execute("DELETE FROM problems WHERE id = ?1", [problem_id])?;
+        restore_immutable_triggers(&transaction)?;
+        transaction.commit()?;
         Ok(())
     }
 
