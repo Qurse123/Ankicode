@@ -16,7 +16,22 @@ backend) plus an MV3 Chromium extension. The approved MVP boundaries are in
 - The stable Rust toolchain installed with `rustup` (`cargo` on `PATH`)
 - Tauri's macOS system prerequisites, including Xcode Command Line Tools
 
-## Setup
+## Run the desktop app (no Cursor / no separate backend)
+
+The Tauri `.app` already includes the Rust backend, SQLite, and the loopback
+API on `127.0.0.1:17342`. You do **not** need to keep a terminal or Cursor open.
+
+```sh
+npm install
+npm run tauri build -- --bundles app
+cp -R src-tauri/target/release/bundle/macos/Ankicode.app /Applications/
+open -a Ankicode
+```
+
+If you still see a “DESKTOP SCAFFOLD” screen, you’re opening an old install —
+replace `/Applications/Ankicode.app` with a fresh build as above.
+
+### Development (hot reload)
 
 ```sh
 npm install
@@ -24,7 +39,8 @@ npx playwright install chromium
 npm run tauri dev
 ```
 
-Run the browser-only React shell with `npm run dev`.
+`tauri dev` starts Vite + the Rust backend together. Browser-only UI (no
+backend): `npm run dev`.
 
 ## Extension
 

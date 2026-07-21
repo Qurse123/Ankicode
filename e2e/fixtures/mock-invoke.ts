@@ -272,7 +272,7 @@ export async function installTauriInvokeMock(page: Page): Promise<void> {
         }
 
         case "get_problem_detail": {
-          const problemId = Number(args?.problem_id);
+          const problemId = Number(args?.problemId ?? args?.problem_id);
           const problem = problems.find((item) => item.id === problemId);
           if (!problem) {
             throw new Error(`Problem ${problemId} not found`);
