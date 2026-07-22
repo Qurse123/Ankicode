@@ -52,7 +52,9 @@ Keep the desktop app running, then:
 1. `npm run build:extension`
 2. Open `chrome://extensions` → enable **Developer mode**
 3. **Load unpacked** → select `extension/dist` (not the repo root `dist/`)
-4. Pair with the code from Ankicode **Settings** (or onboarding)
+4. Pair once with the code from Ankicode **Settings** (or onboarding). The extension
+   stores a long-lived token—you should not need to re-pair unless you Unpair or
+   reload the extension from a new path.
 
 The extension talks only to the local loopback API at **`http://127.0.0.1:17342`**.
 

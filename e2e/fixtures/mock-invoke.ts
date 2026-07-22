@@ -325,6 +325,12 @@ export async function installTauriInvokeMock(page: Page): Promise<void> {
         case "open_problem_url":
           return;
 
+        case "get_pairing_status":
+          return {
+            pairingCode: settings.pairingCode,
+            activeClients: 0,
+          };
+
         case "get_loopback_status":
           return {
             address: "127.0.0.1",
