@@ -85,8 +85,36 @@ async fn pair_success_and_failure() {
     assert!(body["token"].as_str().unwrap().len() >= 64);
     assert!(body["clientId"].as_i64().unwrap() > 0);
 
-    let reused = pair(state.clone(), &code).await;
-    assert_eq!(reused.0, StatusCode::UNAUTHORIZED);
+    // Pairing code stays valid until manually regenerated; same origin re-pairs.
+    let code_after = state
+        .inner
+        .lock()
+        .unwrap()
+        .db
+        .get_settings()
+        .unwrap()
+        .pairing_code;
+    assert_eq!(code_after, code);
+    let (status, reused_body) = pair(state.clone(), &code).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        reused_body["clientId"].as_i64().unwrap(),
+        body["clientId"].as_i64().unwrap()
+    );
+    assert_ne!(
+        reused_body["token"].as_str().unwrap(),
+        body["token"].as_str().unwrap()
+    );
+    assert_eq!(
+        state
+            .inner
+            .lock()
+            .unwrap()
+            .db
+            .count_active_clients()
+            .unwrap(),
+        1
+    );
 }
 
 #[tokio::test]
