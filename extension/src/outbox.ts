@@ -133,6 +133,11 @@ export async function flushOutbox(now = Date.now()): Promise<{
       const status = cause instanceof ApiError ? cause.status : 0;
       // Accepted 404 means the problem is not in My List yet — keep retrying.
       const retryAcceptedNotFound = item.kind === "accepted" && status === 404;
+      if (status === 401 || status === 403) {
+        await clearPairing();
+        dropped += 1;
+        continue;
+      }
       if (!isRetryableStatus(status) && !retryAcceptedNotFound) {
         dropped += 1;
         continue;

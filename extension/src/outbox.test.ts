@@ -6,6 +6,7 @@ import {
   backoffMs,
   enqueue,
   flushOutbox,
+  getPairing,
   loadOutbox,
   newIdempotencyKey,
   setPairing,
@@ -146,5 +147,6 @@ describe("outbox", () => {
     expect(result.dropped).toBe(1);
     expect(result.remaining).toBe(0);
     expect(await loadOutbox()).toEqual([]);
+    expect(await getPairing()).toBeNull();
   });
 });

@@ -67,18 +67,25 @@
   </head>
   <body>
     <h1>Ankicode</h1>
-    <p>Pair with the local desktop app using the code from Settings.</p>
-    <label>
-      Pairing code
-      <input
-        id="pairing-code"
-        maxlength="8"
-        autocomplete="off"
-        spellcheck="false"
-      />
-    </label>
-    <div class="actions">
-      <button id="pair" type="button">Pair</button>
+    <p id="intro">
+      Pair once with the desktop app using the code from Settings. After that,
+      leave this alone.
+    </p>
+    <div id="pair-form">
+      <label>
+        Pairing code
+        <input
+          id="pairing-code"
+          maxlength="8"
+          autocomplete="off"
+          spellcheck="false"
+        />
+      </label>
+      <div class="actions">
+        <button id="pair" type="button">Pair</button>
+      </div>
+    </div>
+    <div class="actions" id="paired-actions" hidden>
       <button id="unpair" type="button">Unpair</button>
     </div>
     <p id="status">Checking status…</p>
