@@ -48,6 +48,7 @@ pub fn run() {
             commands::record_rating,
             commands::list_pending_completions,
             commands::get_loopback_status,
+            commands::get_pairing_status,
             commands::update_settings,
             commands::regenerate_pairing_code,
             commands::export_backup,

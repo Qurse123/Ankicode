@@ -179,6 +179,13 @@ pub struct LoopbackStatusDto {
     pub url: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PairingStatusDto {
+    pub pairing_code: String,
+    pub active_clients: u32,
+}
+
 fn now() -> i64 {
     Utc::now().timestamp()
 }
@@ -386,6 +393,17 @@ pub fn get_loopback_status() -> LoopbackStatusDto {
         port: LOOPBACK_PORT,
         url: format!("http://127.0.0.1:{LOOPBACK_PORT}"),
     }
+}
+
+#[tauri::command]
+pub fn get_pairing_status(state: State<'_, AppState>) -> Result<PairingStatusDto, CommandError> {
+    with_state(&state, |inner| {
+        let settings = inner.db.get_settings()?;
+        Ok(PairingStatusDto {
+            pairing_code: settings.pairing_code,
+            active_clients: inner.db.count_active_clients()?,
+        })
+    })
 }
 
 #[tauri::command]

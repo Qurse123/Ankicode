@@ -520,7 +520,9 @@ impl Database {
         self.get_settings()
     }
 
-    /// Pairs an extension origin with a one-time code and returns `(client_id, plaintext_token)`.
+    /// Pairs an extension origin with the current pairing code and returns
+    /// `(client_id, plaintext_token)`. The pairing code stays valid until the
+    /// user regenerates it. Re-pairing the same origin refreshes the token.
     /// The plaintext token is never persisted; only `sha256(token)` is stored.
     pub fn create_client(
         &mut self,
@@ -532,30 +534,51 @@ impl Database {
         if !is_chrome_extension_origin(origin) {
             return Err(StorageError::InvalidOrigin);
         }
+        let settings = self.get_settings()?;
+        if settings.pairing_code.trim() != code.trim() {
+            return Err(StorageError::InvalidPairingCode);
+        }
         let token = generate_bearer_token();
         let token_hash = hash_token(&token);
-        let new_code = generate_pairing_code();
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        // Atomically consume the one-time pairing code inside the writer lock.
-        let rotated = transaction.execute(
-            "UPDATE app_settings
-             SET pairing_code = ?1, updated_at = ?2
-             WHERE id = 1 AND pairing_code = ?3",
-            params![new_code, now, code.trim()],
-        )?;
-        if rotated == 0 {
-            return Err(StorageError::InvalidPairingCode);
-        }
-        transaction.execute(
-            "INSERT INTO integration_clients(token_hash, allowed_origin, created_at, revoked_at)
-             VALUES (?1, ?2, ?3, NULL)",
-            params![token_hash, origin, now],
-        )?;
-        let client_id = transaction.last_insert_rowid();
+        let existing_id = transaction
+            .query_row(
+                "SELECT id FROM integration_clients
+                 WHERE allowed_origin = ?1 AND revoked_at IS NULL",
+                [origin],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()?;
+        let client_id = if let Some(id) = existing_id {
+            transaction.execute(
+                "UPDATE integration_clients
+                 SET token_hash = ?1, created_at = ?2
+                 WHERE id = ?3",
+                params![token_hash, now, id],
+            )?;
+            id
+        } else {
+            transaction.execute(
+                "INSERT INTO integration_clients(token_hash, allowed_origin, created_at, revoked_at)
+                 VALUES (?1, ?2, ?3, NULL)",
+                params![token_hash, origin, now],
+            )?;
+            transaction.last_insert_rowid()
+        };
         transaction.commit()?;
         Ok((client_id, token))
+    }
+
+    /// Number of active (non-revoked) extension clients.
+    pub fn count_active_clients(&self) -> Result<u32, StorageError> {
+        let count: i64 = self.connection.query_row(
+            "SELECT COUNT(*) FROM integration_clients WHERE revoked_at IS NULL",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok(count as u32)
     }
 
     pub fn authenticate_client(

@@ -3,12 +3,18 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   exportBackup,
   getLoopbackStatus,
+  getPairingStatus,
   importBackup,
   regeneratePairingCode,
   updateSettings,
 } from "../api";
 import { timezoneOptions } from "../timezones";
-import type { AppSettings, BackupDocument, LoopbackStatus } from "../types";
+import type {
+  AppSettings,
+  BackupDocument,
+  LoopbackStatus,
+  PairingStatus,
+} from "../types";
 
 type SettingsPanelProps = {
   settings: AppSettings;
@@ -29,6 +35,7 @@ export function SettingsPanel({
   );
   const [pairingCode, setPairingCode] = useState(settings.pairingCode);
   const [loopback, setLoopback] = useState<LoopbackStatus | null>(null);
+  const [activeClients, setActiveClients] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -38,6 +45,12 @@ export function SettingsPanel({
     void getLoopbackStatus()
       .then(setLoopback)
       .catch(() => setLoopback(null));
+    void getPairingStatus()
+      .then((status: PairingStatus) => {
+        setPairingCode(status.pairingCode);
+        setActiveClients(status.activeClients);
+      })
+      .catch(() => setActiveClients(0));
   }, []);
 
   async function handleSave(event: FormEvent) {
@@ -65,8 +78,10 @@ export function SettingsPanel({
       const next = await regeneratePairingCode();
       setPairingCode(next.pairingCode);
       onSettingsChange(next);
+      const status = await getPairingStatus();
+      setActiveClients(status.activeClients);
       setMessage(
-        "Pairing code regenerated. Existing extension tokens stay valid; only the one-time code changed.",
+        "New pairing code ready. Already-paired extensions keep working until you Unpair them.",
       );
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -169,10 +184,19 @@ export function SettingsPanel({
           Local API bound to {loopback?.url ?? "http://127.0.0.1:17342"} for the
           Chromium extension only.
         </p>
-        <h2>Pairing code</h2>
+        <h2>Pairing</h2>
         <p className="muted">
-          Enter this one-time code in the extension popup. Regenerating
-          invalidates the code, not already-paired tokens.
+          Pair once in the extension popup, then forget it. The extension stores
+          a long-lived token; this code stays valid until you regenerate it.
+        </p>
+        <p className="meta-line">
+          <span className="pill status-reviewed">
+            {activeClients === 0
+              ? "No extension paired yet"
+              : activeClients === 1
+                ? "1 extension paired"
+                : `${activeClients} extensions paired`}
+          </span>
         </p>
         <code className="pairing-code">{pairingCode}</code>
         <button
@@ -181,7 +205,7 @@ export function SettingsPanel({
           disabled={busy}
           onClick={handleRegenerate}
         >
-          Regenerate pairing code
+          Regenerate code (optional)
         </button>
       </div>
 
