@@ -3,6 +3,8 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { formatDueLabel } from "../scheduleLabel";
 import type { Difficulty, ProblemListItem, ProblemStatus } from "../types";
 
+const PAGE_SIZE = 25;
+
 type MyListProps = {
   problems: ProblemListItem[];
   loading: boolean;
@@ -43,6 +45,7 @@ export function MyList({
   );
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -65,6 +68,17 @@ export function MyList({
       );
     });
   }, [problems, search, difficultyFilter, statusFilter]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, difficultyFilter, statusFilter, problems.length]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pageItems = filtered.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE,
+  );
 
   useEffect(() => {
     if (!deleteTarget) {
@@ -203,7 +217,7 @@ export function MyList({
       {error ? <p className="error-text">{error}</p> : null}
 
       <ul className="problem-list">
-        {filtered.map((problem) => (
+        {pageItems.map((problem) => (
           <li key={problem.id} className="problem-row">
             <button
               type="button"
@@ -259,7 +273,42 @@ export function MyList({
         ))}
       </ul>
 
+
+      {filtered.length > 0 ? (
+        <div className="pagination" aria-label="Problem list pages">
+          <p className="muted">
+            Showing {(currentPage - 1) * PAGE_SIZE + 1}–
+            {Math.min(currentPage * PAGE_SIZE, filtered.length)} of{" "}
+            {filtered.length}
+          </p>
+          <div className="row-actions">
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={currentPage <= 1}
+              onClick={() => setPage((value) => Math.max(1, value - 1))}
+            >
+              Previous
+            </button>
+            <span className="pagination-page">
+              Page {currentPage} of {totalPages}
+            </span>
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={currentPage >= totalPages}
+              onClick={() =>
+                setPage((value) => Math.min(totalPages, value + 1))
+              }
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {deleteTarget ? (
+
         <div
           className="modal-backdrop"
           role="presentation"

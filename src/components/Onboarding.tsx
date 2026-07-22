@@ -73,7 +73,9 @@ export function Onboarding({ pairingCode, onComplete }: OnboardingProps) {
         <div className="pairing-block">
           <span>Extension pairing code</span>
           <code className="pairing-code">{pairingCode}</code>
-          <small>Save this for the browser extension later.</small>
+          <small>
+            Pair once in the Chromium extension popup, then you can forget it.
+          </small>
         </div>
 
         {error ? <p className="error-text">{error}</p> : null}

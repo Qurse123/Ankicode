@@ -74,4 +74,37 @@ describe("MyList", () => {
     );
     expect(onDelete).toHaveBeenCalledWith(1);
   });
+
+  it("paginates long problem lists", () => {
+    const many = Array.from({ length: 30 }, (_, index) => ({
+      id: index + 1,
+      slug: `problem-${index + 1}`,
+      title: `problem ${index + 1}`,
+      url: `https://leetcode.com/problems/problem-${index + 1}/`,
+      difficulty: "easy" as const,
+      status: "active" as const,
+      addedAt: index + 1,
+      updatedAt: index + 1,
+      dueAt: null,
+    }));
+    render(
+      <MyList
+        problems={many}
+        loading={false}
+        error={null}
+        onAdd={vi.fn()}
+        onOpen={vi.fn()}
+        onStatus={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("problem 1")).toBeInTheDocument();
+    expect(screen.queryByText("problem 26")).not.toBeInTheDocument();
+    expect(screen.getByText("Page 1 of 2")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByText("problem 26")).toBeInTheDocument();
+    expect(screen.queryByText("problem 1")).not.toBeInTheDocument();
+  });
+
 });
