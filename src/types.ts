@@ -32,6 +32,11 @@ export type LoopbackStatus = {
   url: string;
 };
 
+export type PairingStatus = {
+  pairingCode: string;
+  activeClients: number;
+};
+
 export type TodayItem = {
   problemId: number;
   slug: string;

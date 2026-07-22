@@ -6,6 +6,7 @@ import type {
   Bootstrap,
   Difficulty,
   LoopbackStatus,
+  PairingStatus,
   PendingCompletion,
   Problem,
   ProblemDetail,
@@ -83,6 +84,10 @@ export function listPendingCompletions(): Promise<PendingCompletion[]> {
 
 export function getLoopbackStatus(): Promise<LoopbackStatus> {
   return invoke("get_loopback_status");
+}
+
+export function getPairingStatus(): Promise<PairingStatus> {
+  return invoke("get_pairing_status");
 }
 
 export function exportBackup(): Promise<BackupDocument> {
