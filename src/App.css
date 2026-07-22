@@ -635,3 +635,22 @@ button {
     grid-template-columns: 1fr;
   }
 }
+
+.pagination {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding: 0.85rem 1rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+
+.pagination-page {
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+  font-weight: 650;
+}
