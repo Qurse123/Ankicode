@@ -7,10 +7,9 @@ describe("Today", () => {
   it("shows an empty assignment state", () => {
     render(
       <Today
-        today={{ localDate: "2024-06-01", items: [] }}
+        today={{ localDate: "2024-06-01", items: [], streakDays: 12 }}
         loading={false}
         error={null}
-        streakDays={12}
         onStart={vi.fn()}
         onRate={vi.fn()}
       />,
@@ -39,10 +38,9 @@ describe("Today", () => {
 
     render(
       <Today
-        today={{ localDate: "2024-06-01", items: [item] }}
+        today={{ localDate: "2024-06-01", items: [item], streakDays: 12 }}
         loading={false}
         error={null}
-        streakDays={12}
         onStart={onStart}
         onRate={onRate}
       />,
@@ -59,12 +57,13 @@ describe("Today", () => {
     expect(onRate).toHaveBeenCalledWith(item);
   });
 
-  it("shows rated state and next due after FSRS rating", () => {
+  it("hides rated items and shows all-done state", () => {
     const dueAt = Math.floor(Date.now() / 1000) + 86_400;
     render(
       <Today
         today={{
           localDate: "2024-06-01",
+          streakDays: 1,
           items: [
             {
               problemId: 1,
@@ -82,15 +81,14 @@ describe("Today", () => {
         }}
         loading={false}
         error={null}
-        streakDays={0}
         onStart={vi.fn()}
         onRate={vi.fn()}
       />,
     );
 
-    expect(screen.getByText("rated medium")).toBeInTheDocument();
-    expect(screen.getByText("due tomorrow")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Re-rate" })).toBeInTheDocument();
+    expect(screen.queryByText("two sum")).not.toBeInTheDocument();
+    expect(screen.getByText("All done for today.")).toBeInTheDocument();
+    expect(screen.getByText(/streak 1 day/)).toBeInTheDocument();
     expect(screen.getByText("Reviewed").closest("article")).toHaveTextContent(
       "1",
     );

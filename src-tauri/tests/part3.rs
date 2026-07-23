@@ -316,3 +316,43 @@ fn delete_problem_removes_history_and_allows_readd() {
     assert!(db.list_review_events(again.id).unwrap().is_empty());
     assert!(db.get_schedule(again.id).unwrap().is_none());
 }
+
+#[test]
+fn review_streak_counts_consecutive_local_days() {
+    let mut db = Database::in_memory().unwrap();
+    let scheduler = FsrsScheduler::new(0.9).unwrap();
+    let settings = db.get_settings().unwrap();
+    assert_eq!(settings.timezone_id, DEFAULT_TIMEZONE);
+    db.update_settings(
+        &SettingsUpdate {
+            timezone_id: "UTC".to_owned(),
+            desired_retention: DEFAULT_RETENTION,
+        },
+        T0,
+    )
+    .unwrap();
+    let saved = db
+        .upsert_problem(&problem("two-sum", Difficulty::Easy), T0)
+        .unwrap();
+    assert_eq!(db.review_streak_days("UTC", T0 + DAY).unwrap(), 0);
+
+    db.record_review(
+        saved.id,
+        ReviewEvent::new("day-0", Rating::Medium, T0 + 3_600).unwrap(),
+        &scheduler,
+    )
+    .unwrap();
+    assert_eq!(db.review_streak_days("UTC", T0 + 3_600).unwrap(), 1);
+
+    db.record_review(
+        saved.id,
+        ReviewEvent::new("day-1", Rating::Medium, T0 + DAY + 3_600).unwrap(),
+        &scheduler,
+    )
+    .unwrap();
+    assert_eq!(
+        db.review_streak_days("UTC", T0 + DAY + 3_600).unwrap(),
+        2
+    );
+}
+
