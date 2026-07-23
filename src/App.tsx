@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import "./App.css";
 import {
@@ -19,6 +19,7 @@ import { Onboarding } from "./components/Onboarding";
 import { ProblemDetailPanel } from "./components/ProblemDetail";
 import { RatingDialog } from "./components/RatingDialog";
 import { SettingsPanel } from "./components/SettingsPanel";
+import { StreakCelebration } from "./components/StreakCelebration";
 import { Today } from "./components/Today";
 import type {
   AppSettings,
@@ -63,6 +64,8 @@ function App() {
   const [suppressedPendingId, setSuppressedPendingId] = useState<number | null>(
     null,
   );
+  const [celebrateStreak, setCelebrateStreak] = useState<number | null>(null);
+  const previousStreakRef = useRef<number | null>(null);
 
   const pendingPrompt =
     pendingCompletions.find((item) => item.id !== suppressedPendingId) ?? null;
@@ -110,7 +113,13 @@ function App() {
     }
     setTodayError(null);
     try {
-      setToday(await getToday());
+      const next = await getToday();
+      const previous = previousStreakRef.current;
+      if (previous != null && next.streakDays > previous) {
+        setCelebrateStreak(next.streakDays);
+      }
+      previousStreakRef.current = next.streakDays;
+      setToday(next);
       await refreshPending();
     } catch (cause) {
       setTodayError(cause instanceof Error ? cause.message : String(cause));
@@ -302,7 +311,6 @@ function App() {
             today={today}
             loading={todayLoading}
             error={todayError}
-            streakDays={0}
             onStart={(item: TodayItem) => void handleStart(item.url)}
             onRate={(item: TodayItem) => {
               setRatingError(null);
@@ -396,6 +404,13 @@ function App() {
               title: detail.problem.title,
             });
           }}
+        />
+      ) : null}
+
+      {celebrateStreak != null ? (
+        <StreakCelebration
+          streakDays={celebrateStreak}
+          onDone={() => setCelebrateStreak(null)}
         />
       ) : null}
 

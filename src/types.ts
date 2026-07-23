@@ -53,6 +53,7 @@ export type TodayItem = {
 export type TodayView = {
   localDate: string;
   items: TodayItem[];
+  streakDays: number;
 };
 
 export type ProblemListItem = {
