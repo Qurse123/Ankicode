@@ -59,6 +59,7 @@ describe("App", () => {
     });
     vi.mocked(api.getToday).mockResolvedValue({
       localDate: "2024-06-01",
+      streakDays: 0,
       items: [],
     });
 
@@ -87,6 +88,7 @@ describe("App", () => {
     });
     vi.mocked(api.getToday).mockResolvedValue({
       localDate: "2024-06-01",
+      streakDays: 0,
       items: [],
     });
     vi.mocked(api.listPendingCompletions).mockResolvedValue([

@@ -227,6 +227,7 @@ export async function installTauriInvokeMock(page: Page): Promise<void> {
         case "get_today":
           return {
             localDate: "2026-07-19",
+            streakDays: todayItems.some((item) => item.reviewedToday) ? 1 : 0,
             items: todayItems.map((item) => ({ ...item })),
           };
 
