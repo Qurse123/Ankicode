@@ -724,11 +724,21 @@ button {
   transform: translateX(-50%);
 }
 
-.streak-balloon-0 { background: #c15a30; }
-.streak-balloon-1 { background: #2f5d3a; }
-.streak-balloon-2 { background: #8a5a16; }
-.streak-balloon-3 { background: #3d6ea8; }
-.streak-balloon-4 { background: #8b2e2e; }
+.streak-balloon-0 {
+  background: #c15a30;
+}
+.streak-balloon-1 {
+  background: #2f5d3a;
+}
+.streak-balloon-2 {
+  background: #8a5a16;
+}
+.streak-balloon-3 {
+  background: #3d6ea8;
+}
+.streak-balloon-4 {
+  background: #8b2e2e;
+}
 
 .streak-spark {
   position: absolute;
@@ -742,13 +752,27 @@ button {
   animation: spark-burst 1100ms ease-out var(--delay) forwards;
 }
 
-.streak-spark-0 { background: #c15a30; }
-.streak-spark-1 { background: #2f5d3a; }
-.streak-spark-2 { background: #8a5a16; }
-.streak-spark-3 { background: #3d6ea8; }
-.streak-spark-4 { background: #d4a017; }
-.streak-spark-5 { background: #8b2e2e; }
-.streak-spark-6 { background: #5c574f; }
+.streak-spark-0 {
+  background: #c15a30;
+}
+.streak-spark-1 {
+  background: #2f5d3a;
+}
+.streak-spark-2 {
+  background: #8a5a16;
+}
+.streak-spark-3 {
+  background: #3d6ea8;
+}
+.streak-spark-4 {
+  background: #d4a017;
+}
+.streak-spark-5 {
+  background: #8b2e2e;
+}
+.streak-spark-6 {
+  background: #5c574f;
+}
 
 @keyframes balloon-rise {
   0% {
@@ -767,7 +791,8 @@ button {
 @keyframes spark-burst {
   0% {
     opacity: 0;
-    transform: translate(-50%, -50%) rotate(var(--angle)) translateY(0) scale(0.4);
+    transform: translate(-50%, -50%) rotate(var(--angle)) translateY(0)
+      scale(0.4);
   }
   20% {
     opacity: 1;

@@ -8,13 +8,7 @@ type TodayProps = {
   onRate: (item: TodayItem) => void;
 };
 
-export function Today({
-  today,
-  loading,
-  error,
-  onStart,
-  onRate,
-}: TodayProps) {
+export function Today({ today, loading, error, onStart, onRate }: TodayProps) {
   if (loading) {
     return (
       <section className="page-section" aria-labelledby="today-title">

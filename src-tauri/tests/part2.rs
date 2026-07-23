@@ -162,7 +162,11 @@ fn migrations_are_idempotent_and_constraints_are_enforced() {
         .upsert_problem(&problem("two-sum", Difficulty::Easy), T0)
         .unwrap();
     assert!(db
-        .record_review(999_999, review(Rating::Medium, T0), &FsrsScheduler::default())
+        .record_review(
+            999_999,
+            review(Rating::Medium, T0),
+            &FsrsScheduler::default()
+        )
         .is_err());
     assert!(db.get_problem(saved.id).unwrap().is_some());
 }

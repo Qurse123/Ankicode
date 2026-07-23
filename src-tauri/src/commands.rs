@@ -270,9 +270,7 @@ pub fn get_today(state: State<'_, AppState>) -> Result<TodayViewDto, CommandErro
             });
         }
         items.sort_by_key(|item| (item.reviewed_today, item.position));
-        let streak_days = inner
-            .db
-            .review_streak_days(&settings.timezone_id, now())?;
+        let streak_days = inner.db.review_streak_days(&settings.timezone_id, now())?;
         Ok(TodayViewDto {
             local_date: assignment.local_date,
             items,

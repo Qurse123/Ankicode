@@ -18,7 +18,10 @@ use chrono_tz::Tz;
 use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::{collections::{HashMap, HashSet}, path::Path};
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+};
 use thiserror::Error;
 
 const MIGRATIONS: &[(&str, &str)] = &[
@@ -586,9 +589,9 @@ impl Database {
     /// Consecutive local days with at least one review, ending today (or yesterday
     /// if today has no reviews yet so the streak does not drop mid-day).
     pub fn review_streak_days(&self, timezone_id: &str, now: i64) -> Result<u32, StorageError> {
-        let timezone: Tz = timezone_id.parse().map_err(|_| {
-            StorageError::InvalidData(format!("invalid timezone: {timezone_id}"))
-        })?;
+        let timezone: Tz = timezone_id
+            .parse()
+            .map_err(|_| StorageError::InvalidData(format!("invalid timezone: {timezone_id}")))?;
         let mut dates = HashSet::new();
         {
             let mut statement = self
@@ -600,11 +603,7 @@ impl Database {
                 let Some(utc) = Utc.timestamp_opt(reviewed_at, 0).single() else {
                     continue;
                 };
-                dates.insert(
-                    utc.with_timezone(&timezone)
-                        .format("%Y-%m-%d")
-                        .to_string(),
-                );
+                dates.insert(utc.with_timezone(&timezone).format("%Y-%m-%d").to_string());
             }
         }
         let Some(now_utc) = Utc.timestamp_opt(now, 0).single() else {
@@ -636,7 +635,6 @@ impl Database {
         }
         Ok(streak)
     }
-
 
     pub fn authenticate_client(
         &self,

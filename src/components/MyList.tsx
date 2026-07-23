@@ -273,7 +273,6 @@ export function MyList({
         ))}
       </ul>
 
-
       {filtered.length > 0 ? (
         <div className="pagination" aria-label="Problem list pages">
           <p className="muted">
@@ -308,7 +307,6 @@ export function MyList({
       ) : null}
 
       {deleteTarget ? (
-
         <div
           className="modal-backdrop"
           role="presentation"
@@ -329,8 +327,8 @@ export function MyList({
             <p className="eyebrow">Delete problem</p>
             <h2 id="delete-title">{deleteTarget.title}</h2>
             <p className="panel-copy">
-              Permanently remove this problem and its review history? This cannot
-              be undone.
+              Permanently remove this problem and its review history? This
+              cannot be undone.
             </p>
             {deleteError ? (
               <p className="error-text" role="alert">

@@ -350,9 +350,5 @@ fn review_streak_counts_consecutive_local_days() {
         &scheduler,
     )
     .unwrap();
-    assert_eq!(
-        db.review_streak_days("UTC", T0 + DAY + 3_600).unwrap(),
-        2
-    );
+    assert_eq!(db.review_streak_days("UTC", T0 + DAY + 3_600).unwrap(), 2);
 }
-
