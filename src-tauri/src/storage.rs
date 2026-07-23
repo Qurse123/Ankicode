@@ -13,10 +13,12 @@ use crate::{
         DEFAULT_TIMEZONE,
     },
 };
+use chrono::{TimeZone, Utc};
+use chrono_tz::Tz;
 use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::{collections::HashMap, path::Path};
+use std::{collections::{HashMap, HashSet}, path::Path};
 use thiserror::Error;
 
 const MIGRATIONS: &[(&str, &str)] = &[
@@ -580,6 +582,61 @@ impl Database {
         )?;
         Ok(count as u32)
     }
+
+    /// Consecutive local days with at least one review, ending today (or yesterday
+    /// if today has no reviews yet so the streak does not drop mid-day).
+    pub fn review_streak_days(&self, timezone_id: &str, now: i64) -> Result<u32, StorageError> {
+        let timezone: Tz = timezone_id.parse().map_err(|_| {
+            StorageError::InvalidData(format!("invalid timezone: {timezone_id}"))
+        })?;
+        let mut dates = HashSet::new();
+        {
+            let mut statement = self
+                .connection
+                .prepare("SELECT reviewed_at FROM review_events")?;
+            let rows = statement.query_map([], |row| row.get::<_, i64>(0))?;
+            for reviewed_at in rows {
+                let reviewed_at = reviewed_at?;
+                let Some(utc) = Utc.timestamp_opt(reviewed_at, 0).single() else {
+                    continue;
+                };
+                dates.insert(
+                    utc.with_timezone(&timezone)
+                        .format("%Y-%m-%d")
+                        .to_string(),
+                );
+            }
+        }
+        let Some(now_utc) = Utc.timestamp_opt(now, 0).single() else {
+            return Ok(0);
+        };
+        let today = now_utc.with_timezone(&timezone).date_naive();
+        let mut cursor = today;
+        let today_key = cursor.format("%Y-%m-%d").to_string();
+        if !dates.contains(&today_key) {
+            let Some(yesterday) = cursor.pred_opt() else {
+                return Ok(0);
+            };
+            cursor = yesterday;
+            if !dates.contains(&cursor.format("%Y-%m-%d").to_string()) {
+                return Ok(0);
+            }
+        }
+        let mut streak = 0u32;
+        loop {
+            let key = cursor.format("%Y-%m-%d").to_string();
+            if !dates.contains(&key) {
+                break;
+            }
+            streak = streak.saturating_add(1);
+            let Some(previous) = cursor.pred_opt() else {
+                break;
+            };
+            cursor = previous;
+        }
+        Ok(streak)
+    }
+
 
     pub fn authenticate_client(
         &self,

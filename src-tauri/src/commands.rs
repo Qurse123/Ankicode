@@ -84,6 +84,7 @@ impl From<AppSettings> for AppSettingsDto {
 pub struct TodayViewDto {
     pub local_date: String,
     pub items: Vec<TodayItemDto>,
+    pub streak_days: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -269,9 +270,13 @@ pub fn get_today(state: State<'_, AppState>) -> Result<TodayViewDto, CommandErro
             });
         }
         items.sort_by_key(|item| (item.reviewed_today, item.position));
+        let streak_days = inner
+            .db
+            .review_streak_days(&settings.timezone_id, now())?;
         Ok(TodayViewDto {
             local_date: assignment.local_date,
             items,
+            streak_days,
         })
     })
 }

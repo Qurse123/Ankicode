@@ -1,11 +1,9 @@
-import { formatDueLabel } from "../scheduleLabel";
 import type { TodayItem, TodayView } from "../types";
 
 type TodayProps = {
   today: TodayView | null;
   loading: boolean;
   error: string | null;
-  streakDays: number;
   onStart: (item: TodayItem) => void;
   onRate: (item: TodayItem) => void;
 };
@@ -14,7 +12,6 @@ export function Today({
   today,
   loading,
   error,
-  streakDays,
   onStart,
   onRate,
 }: TodayProps) {
@@ -37,8 +34,11 @@ export function Today({
   }
 
   const items = today?.items ?? [];
-  const remaining = items.filter((item) => !item.reviewedToday).length;
+  const remainingItems = items.filter((item) => !item.reviewedToday);
+  const remaining = remainingItems.length;
   const reviewed = items.length - remaining;
+  const streakDays = today?.streakDays ?? 0;
+
   return (
     <section className="page-section" aria-labelledby="today-title">
       <div className="page-heading">
@@ -70,15 +70,19 @@ export function Today({
             Add active Easy or Medium problems in My List for future days.
           </p>
         </div>
+      ) : remaining === 0 ? (
+        <div className="empty-state today-complete">
+          <p>All done for today.</p>
+          <p className="muted">
+            {reviewed} reviewed · streak {streakDays}{" "}
+            {streakDays === 1 ? "day" : "days"}. Come back tomorrow for the next
+            set.
+          </p>
+        </div>
       ) : (
         <ul className="today-list">
-          {items.map((item) => (
-            <li
-              key={item.problemId}
-              className={
-                item.reviewedToday ? "today-row today-row-reviewed" : "today-row"
-              }
-            >
+          {remainingItems.map((item) => (
+            <li key={item.problemId} className="today-row">
               <div>
                 <h2>{item.title}</h2>
                 <p className="meta-line">
@@ -86,16 +90,7 @@ export function Today({
                     {item.difficulty}
                   </span>
                   <span>cost {item.cost}</span>
-                  {item.reviewedToday ? (
-                    <>
-                      <span className="pill status-reviewed">
-                        rated {item.lastRating ?? "today"}
-                      </span>
-                      <span>{formatDueLabel(item.dueAt)}</span>
-                    </>
-                  ) : (
-                    <span className="pill status-pending">not rated</span>
-                  )}
+                  <span className="pill status-pending">not rated</span>
                 </p>
               </div>
               <div className="row-actions">
@@ -111,7 +106,7 @@ export function Today({
                   className="secondary-button"
                   onClick={() => onRate(item)}
                 >
-                  {item.reviewedToday ? "Re-rate" : "Rate"}
+                  Rate
                 </button>
               </div>
             </li>
