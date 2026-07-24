@@ -270,7 +270,9 @@ export async function installTauriInvokeMock(page: Page): Promise<void> {
         case "delete_problem": {
           const problemId = Number(args?.problemId ?? args?.problem_id);
           problems = problems.filter((item) => item.id !== problemId);
-          todayItems = todayItems.filter((item) => item.problemId !== problemId);
+          todayItems = todayItems.filter(
+            (item) => item.problemId !== problemId,
+          );
           pending = pending.filter((item) => item.problemId !== problemId);
           return;
         }

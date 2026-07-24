@@ -56,7 +56,9 @@ test.describe("Ankicode product journey", () => {
     await ratingDialog.getByRole("button", { name: "Done" }).click();
     await expect(ratingDialog).toHaveCount(0);
     await expect(page.getByText("All done for today.")).toBeVisible();
-    await expect(page.getByText("1 day")).toBeVisible();
+    await expect(
+      page.getByLabel("Today stats").getByText("1 day"),
+    ).toBeVisible();
     await expect(page.getByLabel("pending ratings")).toHaveCount(0);
 
     const calls = await getInvokeCalls(page);

@@ -69,9 +69,7 @@ describe("MyList", () => {
 
     fireEvent.click(screen.getAllByRole("button", { name: "Delete" })[0]);
     expect(screen.getByRole("dialog", { name: "two sum" })).toBeInTheDocument();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Delete permanently" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Delete permanently" }));
     expect(onDelete).toHaveBeenCalledWith(1);
   });
 
@@ -106,5 +104,4 @@ describe("MyList", () => {
     expect(screen.getByText("problem 26")).toBeInTheDocument();
     expect(screen.queryByText("problem 1")).not.toBeInTheDocument();
   });
-
 });
