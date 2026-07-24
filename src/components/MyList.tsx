@@ -69,10 +69,6 @@ export function MyList({
     });
   }, [problems, search, difficultyFilter, statusFilter]);
 
-  useEffect(() => {
-    setPage(1);
-  }, [search, difficultyFilter, statusFilter, problems.length]);
-
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
   const pageItems = filtered.slice(
@@ -179,7 +175,10 @@ export function MyList({
           <span>Search</span>
           <input
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              setPage(1);
+            }}
             placeholder="Filter by title"
           />
         </label>
@@ -187,9 +186,10 @@ export function MyList({
           <span>Difficulty</span>
           <select
             value={difficultyFilter}
-            onChange={(event) =>
-              setDifficultyFilter(event.target.value as "all" | Difficulty)
-            }
+            onChange={(event) => {
+              setDifficultyFilter(event.target.value as "all" | Difficulty);
+              setPage(1);
+            }}
           >
             <option value="all">All</option>
             <option value="easy">Easy</option>
@@ -201,9 +201,10 @@ export function MyList({
           <span>Status</span>
           <select
             value={statusFilter}
-            onChange={(event) =>
-              setStatusFilter(event.target.value as "all" | ProblemStatus)
-            }
+            onChange={(event) => {
+              setStatusFilter(event.target.value as "all" | ProblemStatus);
+              setPage(1);
+            }}
           >
             <option value="all">All</option>
             <option value="active">Active</option>
